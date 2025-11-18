@@ -126,6 +126,8 @@
 </table>
 
 <!-- Modal: Guest details -->
+<!-- Modal: Guest details -->
+<!-- Modal: Guest details -->
 <div class="modal fade" id="guestModal" tabindex="-1" aria-labelledby="guestModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
@@ -135,28 +137,19 @@
             </div>
             <div class="modal-body">
                 <div id="guest-loading" class="text-center py-4">Loading...</div>
+
                 <div id="guest-content" class="d-none">
-                    <dl class="row">
-                        <dt class="col-4">Room</dt>
-                        <dd class="col-8" id="gd-room"></dd>
-                        <dt class="col-4">Type</dt>
-                        <dd class="col-8" id="gd-type"></dd>
-                        <dt class="col-4">Status</dt>
-                        <dd class="col-8" id="gd-status"></dd>
-                        <dt class="col-4">Guest</dt>
-                        <dd class="col-8" id="gd-name"></dd>
-                        <dt class="col-4">Reservation</dt>
-                        <dd class="col-8" id="gd-res"></dd>
-                        <dt class="col-4">Arrival</dt>
-                        <dd class="col-8" id="gd-arr"></dd>
-                        <dt class="col-4">Departure</dt>
-                        <dd class="col-8" id="gd-dep"></dd>
-                        <dt class="col-4">Nationality</dt>
-                        <dd class="col-8" id="gd-nat"></dd>
-                        <dt class="col-4">Phone</dt>
-                        <dd class="col-8" id="gd-phone"></dd>
-                    </dl>
+                    <!-- room header -->
+                    <div class="mb-3">
+                        <div><strong>Room:</strong> <span id="gd-room"></span></div>
+                        <div><strong>Type:</strong> <span id="gd-type"></span></div>
+                        <div><strong>Status:</strong> <span id="gd-status"></span></div>
+                    </div>
+
+                    <!-- guests list -->
+                    <div id="gd-guests-list"></div>
                 </div>
+
                 <div id="guest-empty" class="text-center py-4 d-none">No data available.</div>
                 <div id="guest-error" class="text-center text-danger py-4 d-none">An error occurred while loading data.</div>
             </div>
@@ -167,15 +160,18 @@
     </div>
 </div>
 
+
 @section Scripts {
+
     <script>
-        /* Guest modal AJAX */
+        /* Guest modal AJAX – show guests as list */
         (function(){
             const modal = document.getElementById('guestModal');
             const loading = document.getElementById('guest-loading');
             const content = document.getElementById('guest-content');
             const empty   = document.getElementById('guest-empty');
             const error   = document.getElementById('guest-error');
+            const guestsList = document.getElementById('gd-guests-list');
 
             function show(section){
                 loading.classList.add('d-none');
@@ -188,7 +184,8 @@
             modal.addEventListener('show.bs.modal', function (event) {
                 const button = event.relatedTarget;
                 const room = button.getAttribute('data-room');
-                document.getElementById('guestModalLabel').innerText = `Guest details - room ${room}`;
+                document.getElementById('guestModalLabel').innerText =
+                    `Guest details - room ${room}`;
 
                 show(loading);
 
@@ -198,20 +195,49 @@
                         return r.json();
                     })
                     .then(d => {
-                        if (!d || !d.guestName) {
+                        if (!d || !Array.isArray(d.guests) || d.guests.length === 0) {
                             show(empty);
                             return;
                         }
-                        document.getElementById('gd-room').innerText  = d.roomNumber ?? '';
-                        document.getElementById('gd-type').innerText  = d.roomType || '—';
+
+                        // room info
+                        document.getElementById('gd-room').innerText =
+                            d.roomNumber ?? '';
+                        document.getElementById('gd-type').innerText =
+                            d.roomType || '—';
                         document.getElementById('gd-status').innerText =
                             `${d.occupancyStatus ?? ''} / ${d.roomStatus ?? ''}`.trim();
-                        document.getElementById('gd-name').innerText  = d.guestName || '—';
-                        document.getElementById('gd-res').innerText   = d.reservationNo || '—';
-                        document.getElementById('gd-arr').innerText   = d.arrivalDate || '—';
-                        document.getElementById('gd-dep').innerText   = d.departureDate || '—';
-                        document.getElementById('gd-nat').innerText   = d.nationalityCode || '—';
-                        document.getElementById('gd-phone').innerText = d.phone || '—';
+
+                        // build guests list
+                        guestsList.innerHTML = '';
+                        d.guests.forEach((g, index) => {
+                            const card = document.createElement('div');
+                            card.className = 'border rounded p-2 mb-2';
+
+                            const title = document.createElement('div');
+                            title.className = 'fw-bold mb-1';
+                            title.textContent = `Guest ${index + 1}`;
+                            card.appendChild(title);
+
+                            function addLine(label, value) {
+                                const line = document.createElement('div');
+                                const text = (value && value.toString().trim())
+                                    ? value
+                                    : '—';
+                                line.innerHTML = `<strong>${label}:</strong> ${text}`;
+                                card.appendChild(line);
+                            }
+
+                            addLine('Name', g.guestName);
+                            addLine('Reservation', g.reservationNo);
+                            addLine('Arrival', g.arrivalDate);
+                            addLine('Departure', g.departureDate);
+                            addLine('Nationality', g.nationalityCode);
+                            addLine('Phone', g.phone);
+
+                            guestsList.appendChild(card);
+                        });
+
                         show(content);
                     })
                     .catch(_ => {
@@ -220,6 +246,10 @@
             });
         })();
     </script>
+
+
+
+
 
     <script>
         /* Header sorting + per-column filtering (inputs + selects) + row count */
