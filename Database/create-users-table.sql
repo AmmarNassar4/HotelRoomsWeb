@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS Users (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    UserName TEXT NOT NULL UNIQUE,
+    Password TEXT NOT NULL,
+    IsActive INTEGER NOT NULL DEFAULT 1
+);
+
+INSERT INTO Users (UserName, Password, IsActive)
+VALUES ('admin', '1234', 1);
