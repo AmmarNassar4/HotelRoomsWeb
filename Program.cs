@@ -12,6 +12,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.LogoutPath = "/Account/Logout";
         options.AccessDeniedPath = "/Account/Login";
         options.Cookie.Name = "HotelRoomsAuth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.None;
         options.ExpireTimeSpan = TimeSpan.FromDays(30);
         options.SlidingExpiration = true;
     });
@@ -24,10 +27,8 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    app.UseHsts();
 }
 
-app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
