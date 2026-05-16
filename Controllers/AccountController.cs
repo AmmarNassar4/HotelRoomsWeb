@@ -112,13 +112,20 @@ WHERE UserName = $userName
         private string GetUsersConnectionString()
         {
             var configured = _configuration.GetConnectionString("UsersConnection");
-            if (!string.IsNullOrWhiteSpace(configured))
+            if (string.IsNullOrWhiteSpace(configured))
             {
-                return configured;
+                var defaultDatabasePath = Path.Combine(_environment.ContentRootPath, "App_Data", "users");
+                return $"Data Source={defaultDatabasePath}";
             }
 
-            var databasePath = Path.Combine(_environment.ContentRootPath, "App_Data", "users.db");
-            return $"Data Source={databasePath}";
+            var builder = new SqliteConnectionStringBuilder(configured);
+
+            if (!string.IsNullOrWhiteSpace(builder.DataSource) && !Path.IsPathRooted(builder.DataSource))
+            {
+                builder.DataSource = Path.Combine(_environment.ContentRootPath, builder.DataSource);
+            }
+
+            return builder.ToString();
         }
     }
 }
