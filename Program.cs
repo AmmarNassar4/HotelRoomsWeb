@@ -68,6 +68,6 @@ static bool IsApiRequest(HttpRequest request)
 {
     return request.Path.StartsWithSegments("/Rooms/Data")
         || request.Path.StartsWithSegments("/Rooms/GuestDetails")
-        || string.Equals(request.Headers.XRequestedWith, "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(request.Headers["X-Requested-With"].ToString(), "XMLHttpRequest", StringComparison.OrdinalIgnoreCase)
         || request.Headers.Accept.Any(value => value?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true);
 }
