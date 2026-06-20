@@ -6,14 +6,20 @@
     var roomsJson = JsonSerializer.Serialize(Model.Rooms, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
 
-<div class="d-flex align-items-center justify-content-between mt-3 mb-2">
-    <h2 class="mb-0">Dashboard</h2>
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
     <div>
-        <a asp-controller="Rooms" asp-action="Index" class="btn btn-outline-secondary">Rooms list</a>
+        <h2 class="mb-1">Dashboard</h2>
+        <div class="page-subtitle">Charts and summary from the latest room data</div>
+    </div>
+    <div class="d-grid d-md-flex gap-2">
+        <button id="btn-refresh-dashboard" type="button" class="btn btn-primary mobile-full-btn">Refresh data</button>
+        <a asp-controller="Rooms" asp-action="Index" class="btn btn-outline-secondary mobile-full-btn">Rooms list</a>
     </div>
 </div>
 
-<div class="card mb-3">
+<div class="refresh-status text-muted small mb-2" id="dashboardRefreshStatus"></div>
+
+<div class="card filters-card mb-3">
     <div class="card-body">
         <div class="row g-3">
             <div class="col-12 col-md-4">
@@ -37,24 +43,48 @@
                 <label class="form-label">Room type</label>
                 <select id="f-roomtype" class="form-select">
                     <option value="">All</option>
-                    @foreach (var t in Model.RoomTypes)
-                    {
-                        <option value="@t">@t</option>
-                    }
                 </select>
             </div>
         </div>
-        <div class="mt-3">
+        <div class="d-grid d-md-flex mt-3 gap-2 align-items-center">
             <button id="btn-reset" type="button" class="btn btn-sm btn-outline-secondary">Reset filters</button>
+            <span class="text-muted small">Last updated: <span id="dashboardLastUpdated">—</span></span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-total">0</div>
+            <div class="text-muted">Total rooms</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-occupied">0</div>
+            <div class="text-muted">Occupied</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-vacant">0</div>
+            <div class="text-muted">Vacant</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-dirty">0</div>
+            <div class="text-muted">Dirty</div>
         </div>
     </div>
 </div>
 
 <div class="row g-3 mb-3">
     <div class="col-12 col-lg-6">
-        <div class="card h-100">
-            <div class="card-header">Room status distribution</div>
-            <div class="card-body">
+        <div class="card dashboard-card h-100">
+            <div class="card-header bg-white fw-semibold">Room status distribution</div>
+            <div class="card-body chart-wrap">
                 <canvas id="chartStatus" height="250"></canvas>
                 <small class="text-muted d-block mt-2">
                     Click a slice to see the room type breakdown in the chart on the right.
@@ -63,36 +93,12 @@
         </div>
     </div>
     <div class="col-12 col-lg-6">
-        <div class="card h-100">
-            <div class="card-header">
+        <div class="card dashboard-card h-100">
+            <div class="card-header bg-white fw-semibold">
                 <span id="chart2-title">Detailed by room type</span>
             </div>
-            <div class="card-body">
+            <div class="card-body chart-wrap">
                 <canvas id="chartStatusByType" height="250"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">Summary</div>
-    <div class="card-body">
-        <div class="row text-center">
-            <div class="col-6 col-md-3">
-                <div class="fw-bold" id="kpi-total">0</div>
-                <div class="text-muted">Total rooms</div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="fw-bold" id="kpi-occupied">0</div>
-                <div class="text-muted">Occupied</div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="fw-bold" id="kpi-vacant">0</div>
-                <div class="text-muted">Vacant</div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="fw-bold" id="kpi-dirty">0</div>
-                <div class="text-muted">Dirty</div>
             </div>
         </div>
     </div>
@@ -101,18 +107,53 @@
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
-        const ROOMS = @Html.Raw(roomsJson);
+        const dataUrl = '@Url.Action("Data", "Rooms")';
+        let rooms = (@Html.Raw(roomsJson)).map(normalizeRoom);
 
         const $occ = document.getElementById('f-occupancy');
-        const $rs  = document.getElementById('f-roomstatus');
-        const $rt  = document.getElementById('f-roomtype');
+        const $rs = document.getElementById('f-roomstatus');
+        const $rt = document.getElementById('f-roomtype');
         const $chart2Title = document.getElementById('chart2-title');
+        const refreshButton = document.getElementById('btn-refresh-dashboard');
+        const refreshStatus = document.getElementById('dashboardRefreshStatus');
+        const lastUpdated = document.getElementById('dashboardLastUpdated');
+
+        let statusChart, detailedChart;
+
+        function normalizeRoom(room) {
+            return {
+                roomNumber: room.roomNumber ?? room.RoomNumber ?? 0,
+                roomType: room.roomType ?? room.RoomType ?? '',
+                occupancyStatus: room.occupancyStatus ?? room.OccupancyStatus ?? '',
+                roomStatus: room.roomStatus ?? room.RoomStatus ?? '',
+                guestName: room.guestName ?? room.GuestName ?? ''
+            };
+        }
+
+        function setLastUpdated() {
+            lastUpdated.textContent = new Date().toLocaleString();
+        }
+
+        function populateRoomTypes() {
+            const selected = $rt.value;
+            const types = Array.from(new Set(rooms.map(r => (r.roomType || '').trim()).filter(Boolean))).sort();
+            $rt.innerHTML = '<option value="">All</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                $rt.appendChild(option);
+            });
+            if (types.includes(selected)) {
+                $rt.value = selected;
+            }
+        }
 
         function applyFilters(data) {
             return data.filter(r =>
                 (!$occ.value || r.occupancyStatus === $occ.value) &&
-                (!$rs.value  || r.roomStatus === $rs.value) &&
-                (!$rt.value  || r.roomType === $rt.value)
+                (!$rs.value || r.roomStatus === $rs.value) &&
+                (!$rt.value || r.roomType === $rt.value)
             );
         }
 
@@ -122,7 +163,8 @@
             let occupied = 0, vacant = 0, dirty = 0;
 
             data.forEach(r => {
-                byStatus[r.roomStatus] = (byStatus[r.roomStatus] || 0) + 1;
+                const roomStatus = r.roomStatus || 'Unknown';
+                byStatus[roomStatus] = (byStatus[roomStatus] || 0) + 1;
 
                 if (r.roomStatus === 'Dirty') dirty++;
                 if (r.occupancyStatus === 'Occupied') {
@@ -132,7 +174,7 @@
                 }
 
                 const keyType = (r.roomType || 'Not specified');
-                const bucket = byTypeWithin[r.roomStatus] = byTypeWithin[r.roomStatus] || {};
+                const bucket = byTypeWithin[roomStatus] = byTypeWithin[roomStatus] || {};
                 bucket[keyType] = (bucket[keyType] || 0) + 1;
             });
 
@@ -145,25 +187,15 @@
             return { labels, values };
         }
 
-        let statusChart, detailedChart;
-
         function render() {
-            const data = applyFilters(ROOMS.map(r => ({
-                roomNumber: r.roomNumber,
-                occupancyStatus: r.occupancyStatus,
-                roomStatus: r.roomStatus,
-                roomType: r.roomType
-            })));
-
+            const data = applyFilters(rooms);
             const { byStatus, byTypeWithin, occupied, vacant, total, dirty } = summarize(data);
 
-            // KPIs
             document.getElementById('kpi-total').innerText = total;
             document.getElementById('kpi-occupied').innerText = occupied;
             document.getElementById('kpi-vacant').innerText = vacant;
             document.getElementById('kpi-dirty').innerText = dirty;
 
-            // Chart 1: room status
             const ctx1 = document.getElementById('chartStatus').getContext('2d');
             const s1 = labelsAndValues(byStatus);
 
@@ -175,6 +207,8 @@
                     datasets: [{ data: s1.values }]
                 },
                 options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
                     onClick: (evt, elements) => {
                         if (!elements.length) return;
                         const label = statusChart.data.labels[elements[0].index];
@@ -184,7 +218,6 @@
                 }
             });
 
-            // Chart 2 initial
             const firstStatus = s1.labels[0] || '';
             renderDrilldown(firstStatus, byTypeWithin[firstStatus] || {});
         }
@@ -201,6 +234,8 @@
                     datasets: [{ data: s2.values }]
                 },
                 options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: { legend: { position: 'bottom' } }
                 }
             });
@@ -210,18 +245,65 @@
                 : 'Detailed by room type';
         }
 
-        // Events
+        async function refreshDashboard() {
+            refreshButton.disabled = true;
+            refreshStatus.className = 'refresh-status text-muted small mb-2';
+            refreshStatus.textContent = 'Updating data...';
+
+            try {
+                const response = await fetch(`${dataUrl}?ts=${Date.now()}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+
+                if (response.redirected) {
+                    window.location.href = response.url;
+                    return;
+                }
+
+                if (response.status === 401) {
+                    refreshStatus.className = 'refresh-status text-danger small mb-2';
+                    refreshStatus.textContent = 'Your session expired. Please log in again.';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                rooms = (await response.json()).map(normalizeRoom);
+                populateRoomTypes();
+                render();
+                setLastUpdated();
+                refreshStatus.className = 'refresh-status text-success small mb-2';
+                refreshStatus.textContent = 'Data updated successfully.';
+                window.setTimeout(() => refreshStatus.textContent = '', 3000);
+            } catch (err) {
+                refreshStatus.className = 'refresh-status text-danger small mb-2';
+                refreshStatus.textContent = 'Could not refresh data. Please try again.';
+            } finally {
+                refreshButton.disabled = false;
+            }
+        }
+
         $occ.addEventListener('change', render);
         $rs.addEventListener('change', render);
         $rt.addEventListener('change', render);
+        refreshButton.addEventListener('click', refreshDashboard);
+
         document.getElementById('btn-reset').addEventListener('click', () => {
             $occ.value = '';
-            $rs.value  = '';
-            $rt.value  = '';
+            $rs.value = '';
+            $rt.value = '';
             render();
         });
 
-        // initial
+        populateRoomTypes();
         render();
+        setLastUpdated();
     </script>
 }
