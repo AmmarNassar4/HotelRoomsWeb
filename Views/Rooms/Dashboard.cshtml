@@ -82,10 +82,10 @@
 
 <div class="row g-3 mb-3">
     <div class="col-12 col-lg-6">
-        <div class="card dashboard-card h-100">
+        <div class="card dashboard-card">
             <div class="card-header bg-white fw-semibold">Room status distribution</div>
             <div class="card-body chart-wrap">
-                <canvas id="chartStatus" height="250"></canvas>
+                <canvas id="chartStatus" height="220"></canvas>
                 <small class="text-muted d-block mt-2">
                     Click a slice to see the room type breakdown in the chart on the right.
                 </small>
@@ -93,12 +93,12 @@
         </div>
     </div>
     <div class="col-12 col-lg-6">
-        <div class="card dashboard-card h-100">
+        <div class="card dashboard-card">
             <div class="card-header bg-white fw-semibold">
                 <span id="chart2-title">Detailed by room type</span>
             </div>
             <div class="card-body chart-wrap">
-                <canvas id="chartStatusByType" height="250"></canvas>
+                <canvas id="chartStatusByType" height="220"></canvas>
             </div>
         </div>
     </div>
@@ -132,6 +132,10 @@
 
         function setLastUpdated() {
             lastUpdated.textContent = new Date().toLocaleString();
+        }
+
+        function getChartAspectRatio() {
+            return window.matchMedia('(max-width: 767.98px)').matches ? 1.2 : 1.75;
         }
 
         function populateRoomTypes() {
@@ -208,7 +212,8 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
+                    maintainAspectRatio: true,
+                    aspectRatio: getChartAspectRatio(),
                     onClick: (evt, elements) => {
                         if (!elements.length) return;
                         const label = statusChart.data.labels[elements[0].index];
@@ -235,7 +240,8 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
+                    maintainAspectRatio: true,
+                    aspectRatio: getChartAspectRatio(),
                     plugins: { legend: { position: 'bottom' } }
                 }
             });
