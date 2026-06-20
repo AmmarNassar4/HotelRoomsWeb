@@ -171,6 +171,16 @@ body {
     line-height: 1;
 }
 
+.dashboard-card .chart-wrap {
+    overflow: hidden;
+}
+
+.dashboard-card .chart-wrap canvas {
+    display: block;
+    width: 100% !important;
+    max-height: 320px;
+}
+
 @media (max-width: 767.98px) {
     .app-navbar {
         margin-bottom: 1rem !important;
@@ -202,7 +212,7 @@ body {
         margin: 0.75rem;
     }
 
-    .chart-wrap canvas {
-        max-height: 280px;
+    .dashboard-card .chart-wrap canvas {
+        max-height: 260px;
     }
 }
