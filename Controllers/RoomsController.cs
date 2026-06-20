@@ -45,6 +45,15 @@ namespace HotelRoomsWeb.Controllers
             return View(vm);
         }
 
+        // (API) Current rooms data - used by the Refresh buttons without a full page reload.
+        [HttpGet]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult Data()
+        {
+            var rooms = GetAllRooms();
+            return Json(rooms);
+        }
+
         // Single room details page
         public IActionResult Details(int id)
         {
@@ -59,6 +68,7 @@ namespace HotelRoomsWeb.Controllers
 
         // (API) Guest details for a room - used by the modal via AJAX
         [HttpGet]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult GuestDetails(int id)
         {
             var payload = GetGuestDetailsByRoom(id);
