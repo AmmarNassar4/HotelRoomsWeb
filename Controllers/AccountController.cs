@@ -61,6 +61,8 @@ namespace HotelRoomsWeb.Controllers
             var authProperties = new AuthenticationProperties
             {
                 IsPersistent = model.RememberMe,
+                AllowRefresh = true,
+                IssuedUtc = DateTimeOffset.UtcNow,
                 ExpiresUtc = model.RememberMe
                     ? DateTimeOffset.UtcNow.AddDays(30)
                     : DateTimeOffset.UtcNow.AddHours(8)
