@@ -1,132 +1,94 @@
 @model IEnumerable<HotelRoomsWeb.Models.RoomGuestViewModel>
+@using System.Text.Json
 
 @{
     ViewData["Title"] = "Rooms status";
-
-    // Build distinct list of room types for the Type combobox
-    var roomTypes = Model
-        .Select(m => m.RoomType)
-        .Where(t => !string.IsNullOrWhiteSpace(t))
-        .Distinct()
-        .OrderBy(t => t)
-        .ToList();
+    var roomsJson = JsonSerializer.Serialize(Model, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 }
 
-<div class="d-flex align-items-center justify-content-between mt-3 mb-2">
-    <h2 class="mb-0">Rooms status and guest names</h2>
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
     <div>
-        <a asp-action="Dashboard" class="btn btn-outline-primary">Dashboard</a>
+        <h2 class="mb-1">Rooms status</h2>
+        <div class="page-subtitle">Live room status and guest names</div>
+    </div>
+    <div class="d-grid d-md-flex gap-2">
+        <button id="btn-refresh" type="button" class="btn btn-primary mobile-full-btn">
+            Refresh data
+        </button>
+        <a asp-action="Dashboard" class="btn btn-outline-secondary mobile-full-btn">Dashboard</a>
     </div>
 </div>
 
-<!-- rows summary -->
-<p id="rowsCount" class="text-muted mb-2">
-    <!-- will be filled by JS -->
-</p>
+<div class="refresh-status text-muted small mb-2" id="refreshStatus"></div>
 
-<table id="roomsTable" class="table table-striped table-bordered align-middle">
-    <thead>
-        <!-- main header row (click to sort) -->
-        <tr class="main-header">
-            <th>Room number</th>
-            <th>Type</th>
-            <th>Occupancy status</th>
-            <th>Room status</th>
-            <th>Guest name</th>
-            <th>Details</th>
-        </tr>
-        <!-- filters row -->
-        <tr class="filters-row">
-            <!-- Room number: text search -->
-            <th>
-                <input type="text"
-                       class="form-control form-control-sm column-filter"
-                       placeholder="Search room #"
-                       data-column="0" />
-            </th>
-
-            <!-- Type: combobox -->
-            <th>
-                <select class="form-select form-select-sm column-filter"
-                        data-column="1">
+<div class="card filters-card mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-2">
+                <label class="form-label small text-muted mb-1">Room number</label>
+                <input id="filter-room" type="text" class="form-control form-control-sm column-filter" placeholder="Search room #" />
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label small text-muted mb-1">Type</label>
+                <select id="filter-type" class="form-select form-select-sm column-filter">
                     <option value="">All</option>
-                    @foreach (var t in roomTypes)
-                    {
-                        <option value="@t">@t</option>
-                    }
                 </select>
-            </th>
-
-            <!-- Occupancy status: combobox -->
-            <th>
-                <select class="form-select form-select-sm column-filter"
-                        data-column="2">
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label small text-muted mb-1">Occupancy</label>
+                <select id="filter-occupancy" class="form-select form-select-sm column-filter">
                     <option value="">All</option>
                     <option value="Occupied">Occupied</option>
                     <option value="Vacant">Vacant</option>
                     <option value="Unknown">Unknown</option>
                 </select>
-            </th>
-
-            <!-- Room status: combobox -->
-            <th>
-                <select class="form-select form-select-sm column-filter"
-                        data-column="3">
+            </div>
+            <div class="col-12 col-md-2">
+                <label class="form-label small text-muted mb-1">Room status</label>
+                <select id="filter-status" class="form-select form-select-sm column-filter">
                     <option value="">All</option>
                     <option value="Clean">Clean</option>
                     <option value="Dirty">Dirty</option>
                     <option value="Clean (Inspected)">Clean (Inspected)</option>
                     <option value="Unknown">Unknown</option>
                 </select>
-            </th>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small text-muted mb-1">Guest name</label>
+                <input id="filter-guest" type="text" class="form-control form-control-sm column-filter" placeholder="Search guest" />
+            </div>
+            <div class="col-12 col-md-1">
+                <button id="btn-reset" type="button" class="btn btn-sm btn-outline-secondary w-100">Reset</button>
+            </div>
+        </div>
+    </div>
+</div>
 
-            <!-- Guest name: text search -->
-            <th>
-                <input type="text"
-                       class="form-control form-control-sm column-filter"
-                       placeholder="Search guest"
-                       data-column="4" />
-            </th>
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mb-2 gap-1">
+    <p id="rowsCount" class="text-muted mb-0"></p>
+    <p class="text-muted small mb-0">Last updated: <span id="lastUpdated">—</span></p>
+</div>
 
-            <!-- Details: no filter -->
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        @foreach (var item in Model.OrderBy(m => m.RoomNumber)) @* sorted ascending *@
-        {
-            <tr>
-                <td>@item.RoomNumber</td>
-                <td>@(string.IsNullOrWhiteSpace(item.RoomType) ? "—" : item.RoomType)</td>
-                <td>@item.OccupancyStatus</td>
-                <td>@item.RoomStatus</td>
-                <td>
-                    @if (string.IsNullOrWhiteSpace(item.GuestName))
-                    {
-                        @:—
-                    }
-                    else
-                    {
-                        @item.GuestName
-                    }
-                </td>
-                <td class="text-nowrap">
-                  
-                    <button type="button"
-                            class="btn btn-sm btn-primary js-guest"
-                            data-room="@item.RoomNumber"
-                            data-bs-toggle="modal"
-                            data-bs-target="#guestModal">
-                        Guest details
-                    </button>
-                </td>
-            </tr>
-        }
-    </tbody>
-</table>
+<div class="table-card d-none d-md-block">
+    <div class="table-responsive">
+        <table id="roomsTable" class="table table-striped table-hover align-middle">
+            <thead>
+                <tr>
+                    <th class="sortable-header sort-asc" data-sort="roomNumber">Room number</th>
+                    <th class="sortable-header" data-sort="roomType">Type</th>
+                    <th class="sortable-header" data-sort="occupancyStatus">Occupancy status</th>
+                    <th class="sortable-header" data-sort="roomStatus">Room status</th>
+                    <th class="sortable-header" data-sort="guestName">Guest name</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody id="roomsTableBody"></tbody>
+        </table>
+    </div>
+</div>
 
-<!-- Modal: Guest details -->
-<!-- Modal: Guest details -->
+<div id="roomsCards" class="rooms-mobile-list d-md-none"></div>
+
 <!-- Modal: Guest details -->
 <div class="modal fade" id="guestModal" tabindex="-1" aria-labelledby="guestModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -139,14 +101,11 @@
                 <div id="guest-loading" class="text-center py-4">Loading...</div>
 
                 <div id="guest-content" class="d-none">
-                    <!-- room header -->
                     <div class="mb-3">
                         <div><strong>Room:</strong> <span id="gd-room"></span></div>
                         <div><strong>Type:</strong> <span id="gd-type"></span></div>
                         <div><strong>Status:</strong> <span id="gd-status"></span></div>
                     </div>
-
-                    <!-- guests list -->
                     <div id="gd-guests-list"></div>
                 </div>
 
@@ -160,17 +119,324 @@
     </div>
 </div>
 
-
 @section Scripts {
+    <script>
+        const dataUrl = '@Url.Action("Data", "Rooms")';
+        const guestDetailsUrl = '@Url.Action("GuestDetails", "Rooms")';
+        let rooms = (@Html.Raw(roomsJson)).map(normalizeRoom);
+        let sortKey = 'roomNumber';
+        let sortDirection = 'asc';
+
+        const tableBody = document.getElementById('roomsTableBody');
+        const cardsContainer = document.getElementById('roomsCards');
+        const rowsCountLabel = document.getElementById('rowsCount');
+        const lastUpdatedLabel = document.getElementById('lastUpdated');
+        const refreshStatus = document.getElementById('refreshStatus');
+        const refreshButton = document.getElementById('btn-refresh');
+        const typeFilter = document.getElementById('filter-type');
+        const filters = {
+            room: document.getElementById('filter-room'),
+            type: typeFilter,
+            occupancy: document.getElementById('filter-occupancy'),
+            status: document.getElementById('filter-status'),
+            guest: document.getElementById('filter-guest')
+        };
+
+        function normalizeRoom(room) {
+            return {
+                roomNumber: room.roomNumber ?? room.RoomNumber ?? 0,
+                roomType: room.roomType ?? room.RoomType ?? '',
+                occupancyStatus: room.occupancyStatus ?? room.OccupancyStatus ?? '',
+                roomStatus: room.roomStatus ?? room.RoomStatus ?? '',
+                guestName: room.guestName ?? room.GuestName ?? ''
+            };
+        }
+
+        function text(value, fallback = '—') {
+            const valueText = value === null || value === undefined ? '' : value.toString().trim();
+            return valueText || fallback;
+        }
+
+        function lower(value) {
+            return text(value, '').toLowerCase();
+        }
+
+        function statusClass(value) {
+            const normalized = lower(value);
+            if (normalized.includes('occupied')) return 'status-pill status-occupied';
+            if (normalized.includes('vacant')) return 'status-pill status-vacant';
+            if (normalized.includes('dirty')) return 'status-pill status-dirty';
+            if (normalized.includes('clean')) return 'status-pill status-clean';
+            return 'status-pill status-neutral';
+        }
+
+        function setLastUpdated() {
+            lastUpdatedLabel.textContent = new Date().toLocaleString();
+        }
+
+        function populateRoomTypes(data) {
+            const selected = typeFilter.value;
+            const types = Array.from(new Set(data.map(r => text(r.roomType, '').trim()).filter(Boolean))).sort();
+            typeFilter.innerHTML = '';
+
+            const allOption = document.createElement('option');
+            allOption.value = '';
+            allOption.textContent = 'All';
+            typeFilter.appendChild(allOption);
+
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
+
+            if (types.includes(selected)) {
+                typeFilter.value = selected;
+            }
+        }
+
+        function getFilteredRooms() {
+            const roomSearch = lower(filters.room.value);
+            const typeSearch = filters.type.value;
+            const occupancySearch = filters.occupancy.value;
+            const statusSearch = filters.status.value;
+            const guestSearch = lower(filters.guest.value);
+
+            return rooms.filter(room => {
+                return (!roomSearch || lower(room.roomNumber).includes(roomSearch))
+                    && (!typeSearch || room.roomType === typeSearch)
+                    && (!occupancySearch || room.occupancyStatus === occupancySearch)
+                    && (!statusSearch || room.roomStatus === statusSearch)
+                    && (!guestSearch || lower(room.guestName).includes(guestSearch));
+            });
+        }
+
+        function sortRooms(data) {
+            return [...data].sort((a, b) => {
+                let result;
+                if (sortKey === 'roomNumber') {
+                    result = (parseInt(a.roomNumber, 10) || 0) - (parseInt(b.roomNumber, 10) || 0);
+                } else {
+                    result = text(a[sortKey], '').localeCompare(text(b[sortKey], ''));
+                }
+
+                return sortDirection === 'asc' ? result : -result;
+            });
+        }
+
+        function makeCell(value, className) {
+            const cell = document.createElement('td');
+            if (className) cell.className = className;
+            cell.textContent = text(value);
+            return cell;
+        }
+
+        function makeStatusCell(value) {
+            const cell = document.createElement('td');
+            const pill = document.createElement('span');
+            pill.className = statusClass(value);
+            pill.textContent = text(value);
+            cell.appendChild(pill);
+            return cell;
+        }
+
+        function makeDetailsButton(roomNumber, fullWidth = false) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `btn btn-sm btn-primary js-guest${fullWidth ? ' w-100' : ''}`;
+            button.dataset.room = roomNumber;
+            button.dataset.bsToggle = 'modal';
+            button.dataset.bsTarget = '#guestModal';
+            button.textContent = 'Guest details';
+            return button;
+        }
+
+        function renderTableRows(data) {
+            tableBody.innerHTML = '';
+
+            data.forEach(room => {
+                const row = document.createElement('tr');
+                row.appendChild(makeCell(room.roomNumber, 'fw-semibold'));
+                row.appendChild(makeCell(room.roomType));
+                row.appendChild(makeStatusCell(room.occupancyStatus));
+                row.appendChild(makeStatusCell(room.roomStatus));
+                row.appendChild(makeCell(room.guestName));
+
+                const actions = document.createElement('td');
+                actions.className = 'text-nowrap';
+                actions.appendChild(makeDetailsButton(room.roomNumber));
+                row.appendChild(actions);
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        function renderCards(data) {
+            cardsContainer.innerHTML = '';
+
+            if (data.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'alert alert-light border text-center';
+                empty.textContent = 'No rooms match the selected filters.';
+                cardsContainer.appendChild(empty);
+                return;
+            }
+
+            data.forEach(room => {
+                const card = document.createElement('div');
+                card.className = 'room-card p-3';
+
+                const header = document.createElement('div');
+                header.className = 'd-flex align-items-start gap-3 mb-3';
+
+                const roomBadge = document.createElement('div');
+                roomBadge.className = 'room-number-badge';
+                roomBadge.textContent = text(room.roomNumber);
+                header.appendChild(roomBadge);
+
+                const titleWrap = document.createElement('div');
+                titleWrap.className = 'flex-grow-1';
+                const title = document.createElement('div');
+                title.className = 'fw-bold fs-5';
+                title.textContent = `Room ${text(room.roomNumber)}`;
+                const subtitle = document.createElement('div');
+                subtitle.className = 'text-muted small';
+                subtitle.textContent = `Type: ${text(room.roomType)}`;
+                titleWrap.appendChild(title);
+                titleWrap.appendChild(subtitle);
+                header.appendChild(titleWrap);
+
+                card.appendChild(header);
+
+                const meta = document.createElement('div');
+                meta.className = 'room-meta-grid mb-3';
+                addMeta(meta, 'Occupancy', room.occupancyStatus);
+                addMeta(meta, 'Room status', room.roomStatus);
+                addMeta(meta, 'Guest', room.guestName);
+                addMeta(meta, 'Type', room.roomType);
+                card.appendChild(meta);
+
+                card.appendChild(makeDetailsButton(room.roomNumber, true));
+                cardsContainer.appendChild(card);
+            });
+        }
+
+        function addMeta(container, label, value) {
+            const item = document.createElement('div');
+            item.className = 'room-meta-item';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'room-meta-label';
+            labelEl.textContent = label;
+            const valueEl = document.createElement('span');
+            valueEl.className = 'room-meta-value';
+            valueEl.textContent = text(value);
+            item.appendChild(labelEl);
+            item.appendChild(valueEl);
+            container.appendChild(item);
+        }
+
+        function updateSortHeaders() {
+            document.querySelectorAll('.sortable-header').forEach(header => {
+                header.classList.remove('sort-asc', 'sort-desc');
+                if (header.dataset.sort === sortKey) {
+                    header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+        }
+
+        function renderRooms() {
+            const filtered = getFilteredRooms();
+            const sorted = sortRooms(filtered);
+            renderTableRows(sorted);
+            renderCards(sorted);
+            rowsCountLabel.textContent = `Showing ${sorted.length} of ${rooms.length} rooms`;
+            updateSortHeaders();
+        }
+
+        async function refreshRooms() {
+            refreshButton.disabled = true;
+            refreshStatus.className = 'refresh-status text-muted small mb-2';
+            refreshStatus.textContent = 'Updating data...';
+
+            try {
+                const response = await fetch(`${dataUrl}?ts=${Date.now()}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+
+                if (response.redirected) {
+                    window.location.href = response.url;
+                    return;
+                }
+
+                if (response.status === 401) {
+                    refreshStatus.className = 'refresh-status text-danger small mb-2';
+                    refreshStatus.textContent = 'Your session expired. Please log in again.';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                rooms = (await response.json()).map(normalizeRoom);
+                populateRoomTypes(rooms);
+                renderRooms();
+                setLastUpdated();
+                refreshStatus.className = 'refresh-status text-success small mb-2';
+                refreshStatus.textContent = 'Data updated successfully.';
+                window.setTimeout(() => refreshStatus.textContent = '', 3000);
+            } catch (err) {
+                refreshStatus.className = 'refresh-status text-danger small mb-2';
+                refreshStatus.textContent = 'Could not refresh data. Please try again.';
+            } finally {
+                refreshButton.disabled = false;
+            }
+        }
+
+        document.querySelectorAll('.sortable-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const nextKey = header.dataset.sort;
+                if (sortKey === nextKey) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortKey = nextKey;
+                    sortDirection = 'asc';
+                }
+                renderRooms();
+            });
+        });
+
+        document.querySelectorAll('.column-filter').forEach(control => {
+            control.addEventListener('input', renderRooms);
+            control.addEventListener('change', renderRooms);
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            Object.values(filters).forEach(control => control.value = '');
+            renderRooms();
+        });
+
+        refreshButton.addEventListener('click', refreshRooms);
+
+        populateRoomTypes(rooms);
+        renderRooms();
+        setLastUpdated();
+    </script>
 
     <script>
-        /* Guest modal AJAX – show guests as list */
+        /* Guest modal AJAX - show guests as list */
         (function(){
             const modal = document.getElementById('guestModal');
             const loading = document.getElementById('guest-loading');
             const content = document.getElementById('guest-content');
-            const empty   = document.getElementById('guest-empty');
-            const error   = document.getElementById('guest-error');
+            const empty = document.getElementById('guest-empty');
+            const error = document.getElementById('guest-error');
             const guestsList = document.getElementById('gd-guests-list');
 
             function show(section){
@@ -181,15 +447,36 @@
                 section.classList.remove('d-none');
             }
 
+            function setText(id, value) {
+                document.getElementById(id).textContent = text(value);
+            }
+
+            function addLine(container, label, value) {
+                const line = document.createElement('div');
+                const labelEl = document.createElement('strong');
+                labelEl.textContent = `${label}: `;
+                const valueEl = document.createElement('span');
+                valueEl.textContent = text(value);
+                line.appendChild(labelEl);
+                line.appendChild(valueEl);
+                container.appendChild(line);
+            }
+
             modal.addEventListener('show.bs.modal', function (event) {
                 const button = event.relatedTarget;
-                const room = button.getAttribute('data-room');
-                document.getElementById('guestModalLabel').innerText =
-                    `Guest details - room ${room}`;
+                const room = button?.getAttribute('data-room');
+                document.getElementById('guestModalLabel').innerText = `Guest details - room ${room}`;
 
                 show(loading);
 
-                fetch(`/Rooms/GuestDetails?id=${encodeURIComponent(room)}`)
+                fetch(`${guestDetailsUrl}?id=${encodeURIComponent(room)}&ts=${Date.now()}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                })
                     .then(r => {
                         if (!r.ok) throw new Error('HTTP ' + r.status);
                         return r.json();
@@ -200,40 +487,26 @@
                             return;
                         }
 
-                        // room info
-                        document.getElementById('gd-room').innerText =
-                            d.roomNumber ?? '';
-                        document.getElementById('gd-type').innerText =
-                            d.roomType || '—';
-                        document.getElementById('gd-status').innerText =
-                            `${d.occupancyStatus ?? ''} / ${d.roomStatus ?? ''}`.trim();
+                        setText('gd-room', d.roomNumber);
+                        setText('gd-type', d.roomType);
+                        setText('gd-status', `${d.occupancyStatus ?? ''} / ${d.roomStatus ?? ''}`.trim());
 
-                        // build guests list
                         guestsList.innerHTML = '';
                         d.guests.forEach((g, index) => {
                             const card = document.createElement('div');
-                            card.className = 'border rounded p-2 mb-2';
+                            card.className = 'border rounded p-2 mb-2 bg-light';
 
                             const title = document.createElement('div');
                             title.className = 'fw-bold mb-1';
                             title.textContent = `Guest ${index + 1}`;
                             card.appendChild(title);
 
-                            function addLine(label, value) {
-                                const line = document.createElement('div');
-                                const text = (value && value.toString().trim())
-                                    ? value
-                                    : '—';
-                                line.innerHTML = `<strong>${label}:</strong> ${text}`;
-                                card.appendChild(line);
-                            }
-
-                            addLine('Name', g.guestName);
-                            addLine('Reservation', g.reservationNo);
-                            addLine('Arrival', g.arrivalDate);
-                            addLine('Departure', g.departureDate);
-                            addLine('Nationality', g.nationalityCode);
-                            addLine('Phone', g.phone);
+                            addLine(card, 'Name', g.guestName);
+                            addLine(card, 'Reservation', g.reservationNo);
+                            addLine(card, 'Arrival', g.arrivalDate);
+                            addLine(card, 'Departure', g.departureDate);
+                            addLine(card, 'Nationality', g.nationalityCode);
+                            addLine(card, 'Phone', g.phone);
 
                             guestsList.appendChild(card);
                         });
@@ -244,112 +517,6 @@
                         show(error);
                     });
             });
-        })();
-    </script>
-
-
-
-
-
-    <script>
-        /* Header sorting + per-column filtering (inputs + selects) + row count */
-        (function() {
-            const table = document.getElementById('roomsTable');
-            if (!table) return;
-
-            const tbody = table.querySelector('tbody');
-            const allRows = Array.from(tbody.rows); // original rows
-            const totalCount = allRows.length;
-            const rowsCountLabel = document.getElementById('rowsCount');
-
-            let currentSortColumn = 0;      // default sort by room number
-            let currentSortDirection = 'asc';
-            const filters = {};             // { columnIndex: lowercaseFilterValue }
-
-            function updateRowsCount(filteredCount) {
-                if (!rowsCountLabel) return;
-                rowsCountLabel.textContent =
-                    `Showing ${filteredCount} of ${totalCount} rooms`;
-            }
-
-            function applyFiltersAndSort() {
-                // Filter
-                let rows = allRows.filter(row => {
-                    return Object.entries(filters).every(([colIndex, value]) => {
-                        const idx = parseInt(colIndex, 10);
-                        const cellText = (row.cells[idx]?.textContent || '').toLowerCase();
-                        return cellText.includes(value);
-                    });
-                });
-
-                // Sort
-                if (currentSortColumn != null) {
-                    rows.sort((a, b) => {
-                        const aText = (a.cells[currentSortColumn]?.textContent || '').trim();
-                        const bText = (b.cells[currentSortColumn]?.textContent || '').trim();
-
-                        let result;
-                        if (currentSortColumn === 0) {
-                            // numeric sort for room number
-                            const aNum = parseInt(aText, 10) || 0;
-                            const bNum = parseInt(bText, 10) || 0;
-                            result = aNum - bNum;
-                        } else {
-                            result = aText.localeCompare(bText);
-                        }
-
-                        return currentSortDirection === 'asc' ? result : -result;
-                    });
-                }
-
-                // Re-render tbody
-                tbody.innerHTML = '';
-                rows.forEach(r => tbody.appendChild(r));
-
-                // update counts
-                updateRowsCount(rows.length);
-            }
-
-            // Click header to sort
-            const headerCells = table.querySelectorAll('thead tr.main-header th');
-            headerCells.forEach((th, index) => {
-                if (index === headerCells.length - 1) {
-                    // skip Details column
-                    return;
-                }
-                th.style.cursor = 'pointer';
-                th.addEventListener('click', () => {
-                    if (currentSortColumn === index) {
-                        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-                    } else {
-                        currentSortColumn = index;
-                        currentSortDirection = 'asc';
-                    }
-                    applyFiltersAndSort();
-                });
-            });
-
-            // Inputs + selects for filtering
-            const filterControls = table.querySelectorAll('.column-filter');
-            filterControls.forEach(ctrl => {
-                const col = parseInt(ctrl.dataset.column, 10);
-
-                function updateFilter() {
-                    const val = (ctrl.value || '').trim().toLowerCase();
-                    if (val) {
-                        filters[col] = val;
-                    } else {
-                        delete filters[col];
-                    }
-                    applyFiltersAndSort();
-                }
-
-                ctrl.addEventListener('input', updateFilter);
-                ctrl.addEventListener('change', updateFilter);
-            });
-
-            // initial render (so label shows "Showing total of total rooms")
-            applyFiltersAndSort();
         })();
     </script>
 }
