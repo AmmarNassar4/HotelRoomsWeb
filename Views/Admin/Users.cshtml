@@ -7,7 +7,7 @@
 <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
     <div>
         <h2 class="mb-1">Admin users</h2>
-        <div class="page-subtitle">Add users and manage who can change vacant room status</div>
+        <div class="page-subtitle">Add users, change passwords, and manage who can change vacant room status</div>
     </div>
     <a asp-controller="Rooms" asp-action="Index" class="btn btn-outline-secondary mobile-full-btn">Rooms list</a>
 </div>
@@ -114,7 +114,17 @@
                         </td>
                         <td class="text-muted small">@user.CreatedAt</td>
                         <td>
-                            <button form="@formId" type="submit" class="btn btn-sm btn-primary">Save</button>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button form="@formId" type="submit" class="btn btn-sm btn-primary">Save</button>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-warning js-change-password"
+                                        data-user-id="@user.Id"
+                                        data-user-name="@user.UserName"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#changePasswordModal">
+                                    Change password
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -123,6 +133,52 @@
     </div>
 </div>
 
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-controller="Admin" asp-action="ChangeUserPassword" method="post">
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title" id="changePasswordModalLabel">Change user password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="Id" id="password-user-id" />
+                    <input type="hidden" name="UserName" id="password-user-name-hidden" />
+
+                    <div class="mb-3">
+                        <label class="form-label">User</label>
+                        <input type="text" id="password-user-name" class="form-control" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password-new" class="form-label">New password</label>
+                        <input type="password" name="NewPassword" id="password-new" class="form-control" required minlength="4" autocomplete="new-password" />
+                        <div class="form-text">Minimum 4 characters.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Change password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        document.querySelectorAll('.js-change-password').forEach(button => {
+            button.addEventListener('click', () => {
+                const userId = button.dataset.userId;
+                const userName = button.dataset.userName;
+                document.getElementById('password-user-id').value = userId;
+                document.getElementById('password-user-name').value = userName;
+                document.getElementById('password-user-name-hidden').value = userName;
+                document.getElementById('password-new').value = '';
+                setTimeout(() => document.getElementById('password-new').focus(), 250);
+            });
+        });
+    </script>
 }
