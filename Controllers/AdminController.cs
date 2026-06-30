@@ -1,8 +1,10 @@
 using HotelRoomsWeb.Models;
 using HotelRoomsWeb.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
 
 namespace HotelRoomsWeb.Controllers
 {
