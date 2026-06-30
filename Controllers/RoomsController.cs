@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,7 @@ namespace HotelRoomsWeb.Controllers
     [Authorize]
     public class RoomsController : Controller
     {
+        private const string PropertyCode = "RRK";
         private readonly IConfiguration _configuration;
 
         public RoomsController(IConfiguration configuration)
@@ -30,6 +32,8 @@ namespace HotelRoomsWeb.Controllers
         public IActionResult Dashboard()
         {
             var rooms = GetAllRooms();
+            var expectedArrivalRooms = GetExpectedArrivalRooms();
+            var cleanInspectedVacantRooms = CountCleanInspectedVacantRooms(rooms);
 
             var vm = new RoomDashboardViewModel
             {
@@ -39,7 +43,10 @@ namespace HotelRoomsWeb.Controllers
                     .Select(r => r.RoomType)
                     .Distinct()
                     .OrderBy(s => s)
-                    .ToList()
+                    .ToList(),
+                ExpectedArrivalRooms = expectedArrivalRooms,
+                CleanInspectedVacantRooms = cleanInspectedVacantRooms,
+                AvailableRoomsAfterExpectedArrivals = cleanInspectedVacantRooms - expectedArrivalRooms
             };
 
             return View(vm);
@@ -52,6 +59,23 @@ namespace HotelRoomsWeb.Controllers
         {
             var rooms = GetAllRooms();
             return Json(rooms);
+        }
+
+        // (API) Dashboard summary data - used by the dashboard refresh button.
+        [HttpGet]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult DashboardStats()
+        {
+            var rooms = GetAllRooms();
+            var expectedArrivalRooms = GetExpectedArrivalRooms();
+            var cleanInspectedVacantRooms = CountCleanInspectedVacantRooms(rooms);
+
+            return Json(new
+            {
+                expectedArrivalRooms,
+                cleanInspectedVacantRooms,
+                availableRoomsAfterExpectedArrivals = cleanInspectedVacantRooms - expectedArrivalRooms
+            });
         }
 
         // Single room details page
@@ -83,6 +107,55 @@ namespace HotelRoomsWeb.Controllers
         // --------------------------------------------------------------------
         // Data access helpers
         // --------------------------------------------------------------------
+
+        private int GetExpectedArrivalRooms()
+        {
+            var connectionString = _configuration.GetConnectionString("PmsConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new Exception("Connection string 'PmsConnection' is missing.");
+            }
+
+            var arrivalDate = int.Parse(DateTime.Today.ToString("yyyyMMdd", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+
+            const string sql = @"
+SELECT ISNULL(SUM(
+           ISNULL(R1.SGLCNF, 0)
+         + ISNULL(R1.DBLCNF, 0)
+         + ISNULL(R1.TPLCNF, 0)
+         + ISNULL(R1.QUDCNF, 0)
+         - ISNULL(R1.CKIROM, 0)
+       ), 0) AS ExpectedArrivalRooms
+FROM PMS.FMR01TBL R1
+WHERE R1.PRPCOD = @PropertyCode
+  AND R1.ARRDAT = @ArrivalDate
+  AND (ISNULL(R1.SGLCNF, 0) + ISNULL(R1.DBLCNF, 0) + ISNULL(R1.TPLCNF, 0) + ISNULL(R1.QUDCNF, 0) - ISNULL(R1.CKIROM, 0)) <> 0
+  AND R1.SUBSRL IN (
+      SELECT MAX(A.SUBSRL)
+      FROM PMS.FMR01TBL A
+      WHERE A.PRPCOD = R1.PRPCOD
+        AND A.RESNUB = R1.RESNUB
+        AND A.SRLNUB = R1.SRLNUB
+  )
+  AND R1.ROMTYP <> 'ZZZ';";
+
+            using var connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@PropertyCode", PropertyCode);
+            command.Parameters.AddWithValue("@ArrivalDate", arrivalDate);
+
+            var value = command.ExecuteScalar();
+            return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+        }
+
+        private static int CountCleanInspectedVacantRooms(IEnumerable<RoomGuestViewModel> rooms)
+        {
+            return rooms.Count(r =>
+                string.Equals(r.RoomStatus, "Clean (Inspected)", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(r.OccupancyStatus, "Vacant", StringComparison.OrdinalIgnoreCase));
+        }
 
         // Get all rooms (one row per room) with aggregated guest names
         private List<RoomGuestViewModel> GetAllRooms()
