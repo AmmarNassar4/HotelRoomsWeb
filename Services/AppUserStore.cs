@@ -1,5 +1,7 @@
 using HotelRoomsWeb.Models;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
 
 namespace HotelRoomsWeb.Services
 {
