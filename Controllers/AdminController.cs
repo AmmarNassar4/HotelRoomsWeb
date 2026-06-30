@@ -80,6 +80,32 @@ namespace HotelRoomsWeb.Controllers
             return RedirectToAction(nameof(Users));
         }
 
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult ChangeUserPassword(ChangeUserPasswordViewModel model)
+        {
+            if (!CurrentUserIsAdmin())
+            {
+                return Forbid();
+            }
+
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(model.NewPassword))
+            {
+                TempData["ErrorMessage"] = "Please enter a valid new password. Minimum length is 4 characters.";
+                return RedirectToAction(nameof(Users));
+            }
+
+            var updated = _userStore.UpdateUserPassword(model.Id, model.NewPassword.Trim());
+            if (!updated)
+            {
+                TempData["ErrorMessage"] = "User was not found. Password was not changed.";
+                return RedirectToAction(nameof(Users));
+            }
+
+            TempData["SuccessMessage"] = $"Password changed successfully for user {model.UserName}.";
+            return RedirectToAction(nameof(Users));
+        }
+
         private bool CurrentUserIsAdmin()
         {
             return User.HasClaim("IsAdmin", "true");
