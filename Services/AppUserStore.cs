@@ -97,6 +97,22 @@ WHERE rowid = $id;";
             EnsureAtLeastOneAdmin(connection);
         }
 
+        public bool UpdateUserPassword(long id, string newPassword)
+        {
+            EnsureDatabase();
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+UPDATE Users
+SET Password = $password
+WHERE rowid = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            command.Parameters.AddWithValue("$password", newPassword);
+
+            return command.ExecuteNonQuery() > 0;
+        }
+
         public void AddRoomStatusChange(int roomNumber, string oldStatus, string newStatus, string changedBy)
         {
             EnsureDatabase();
