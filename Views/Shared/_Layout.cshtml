@@ -63,5 +63,28 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     @RenderSection("Scripts", required: false)
+    <script>
+        (function () {
+            try {
+                if (typeof roomCanBeChanged !== 'function' || typeof renderRooms !== 'function') {
+                    return;
+                }
+
+                roomCanBeChanged = function (room) {
+                    return canChangeRoomStatus
+                        && (room.occupancyStatus === 'Vacant' || room.occupancyStatus === 'Occupied');
+                };
+
+                const roomStatusHelp = document.querySelector('#roomStatusModal .form-text');
+                if (roomStatusHelp) {
+                    roomStatusHelp.textContent = 'Vacant and occupied rooms can be changed.';
+                }
+
+                renderRooms();
+            } catch (_) {
+                // This script only applies to the rooms page.
+            }
+        })();
+    </script>
 </body>
 </html>
