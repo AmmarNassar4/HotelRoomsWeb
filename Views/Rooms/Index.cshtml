@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "Rooms status";
     var roomsJson = JsonSerializer.Serialize(Model, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    var canChangeRoomStatus = User.HasClaim("CanChangeRoomStatus", "true");
 }
 
 <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
@@ -18,6 +19,10 @@
         <a asp-action="Dashboard" class="btn btn-outline-secondary mobile-full-btn">Dashboard</a>
     </div>
 </div>
+
+<form id="roomStatusAntiForgeryForm" class="d-none">
+    @Html.AntiForgeryToken()
+</form>
 
 <div class="refresh-status text-muted small mb-2" id="refreshStatus"></div>
 
@@ -119,13 +124,54 @@
     </div>
 </div>
 
+<!-- Modal: Change room status -->
+<div class="modal fade" id="roomStatusModal" tabindex="-1" aria-labelledby="roomStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="roomStatusModalLabel">Change room status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div><strong>Room:</strong> <span id="rs-room"></span></div>
+                    <div><strong>Current:</strong> <span id="rs-current"></span></div>
+                </div>
+
+                <div id="rs-message" class="alert d-none"></div>
+
+                <div class="mb-3">
+                    <label for="rs-new-status" class="form-label">New room status</label>
+                    <select id="rs-new-status" class="form-select"></select>
+                    <div class="form-text">Only vacant rooms can be changed.</div>
+                </div>
+
+                <hr />
+                <h6 class="mb-2">Last 20 changes</h6>
+                <div id="rs-history-loading" class="text-muted small">Loading history...</div>
+                <div id="rs-history" class="room-status-history"></div>
+                <div id="rs-history-empty" class="text-muted small d-none">No previous changes for this room.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="btn-save-room-status">Save status</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <script>
         const dataUrl = '@Url.Action("Data", "Rooms")';
         const guestDetailsUrl = '@Url.Action("GuestDetails", "Rooms")';
+        const roomStatusOptionsUrl = '@Url.Action("RoomStatusOptions", "Rooms")';
+        const roomStatusHistoryUrl = '@Url.Action("RoomStatusHistory", "Rooms")';
+        const changeRoomStatusUrl = '@Url.Action("ChangeRoomStatus", "Rooms")';
+        const canChangeRoomStatus = @JsonSerializer.Serialize(canChangeRoomStatus);
         let rooms = (@Html.Raw(roomsJson)).map(normalizeRoom);
         let sortKey = 'roomNumber';
         let sortDirection = 'asc';
+        let activeStatusRoomNumber = null;
 
         const tableBody = document.getElementById('roomsTableBody');
         const cardsContainer = document.getElementById('roomsCards');
@@ -134,6 +180,10 @@
         const refreshStatus = document.getElementById('refreshStatus');
         const refreshButton = document.getElementById('btn-refresh');
         const typeFilter = document.getElementById('filter-type');
+        const statusModalElement = document.getElementById('roomStatusModal');
+        const statusModal = new bootstrap.Modal(statusModalElement);
+        const statusMessage = document.getElementById('rs-message');
+        const saveStatusButton = document.getElementById('btn-save-room-status');
         const filters = {
             room: document.getElementById('filter-room'),
             type: typeFilter,
@@ -232,12 +282,36 @@
             return cell;
         }
 
-        function makeStatusCell(value) {
-            const cell = document.createElement('td');
+        function makeStatusPill(value) {
             const pill = document.createElement('span');
             pill.className = statusClass(value);
             pill.textContent = text(value);
-            cell.appendChild(pill);
+            return pill;
+        }
+
+        function makeStatusCell(value) {
+            const cell = document.createElement('td');
+            cell.appendChild(makeStatusPill(value));
+            return cell;
+        }
+
+        function roomCanBeChanged(room) {
+            return canChangeRoomStatus && room.occupancyStatus === 'Vacant';
+        }
+
+        function makeRoomStatusCell(room) {
+            const cell = document.createElement('td');
+            if (roomCanBeChanged(room)) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `${statusClass(room.roomStatus)} status-action js-change-status`;
+                button.dataset.room = room.roomNumber;
+                button.title = 'Change room status';
+                button.textContent = text(room.roomStatus);
+                cell.appendChild(button);
+            } else {
+                cell.appendChild(makeStatusPill(room.roomStatus));
+            }
             return cell;
         }
 
@@ -252,6 +326,15 @@
             return button;
         }
 
+        function makeChangeStatusButton(room) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-sm btn-outline-warning js-change-status';
+            button.dataset.room = room.roomNumber;
+            button.textContent = 'Change room status';
+            return button;
+        }
+
         function renderTableRows(data) {
             tableBody.innerHTML = '';
 
@@ -260,7 +343,7 @@
                 row.appendChild(makeCell(room.roomNumber, 'fw-semibold'));
                 row.appendChild(makeCell(room.roomType));
                 row.appendChild(makeStatusCell(room.occupancyStatus));
-                row.appendChild(makeStatusCell(room.roomStatus));
+                row.appendChild(makeRoomStatusCell(room));
                 row.appendChild(makeCell(room.guestName));
 
                 const actions = document.createElement('td');
@@ -316,6 +399,12 @@
                 addMeta(meta, 'Guest', room.guestName);
                 addMeta(meta, 'Type', room.roomType);
                 card.appendChild(meta);
+
+                if (roomCanBeChanged(room)) {
+                    const changeButton = makeChangeStatusButton(room);
+                    changeButton.classList.add('w-100', 'mb-2');
+                    card.appendChild(changeButton);
+                }
 
                 card.appendChild(makeDetailsButton(room.roomNumber, true));
                 cardsContainer.appendChild(card);
@@ -399,6 +488,162 @@
             }
         }
 
+        function showStatusMessage(message, type = 'info') {
+            statusMessage.className = `alert alert-${type}`;
+            statusMessage.textContent = message;
+            statusMessage.classList.remove('d-none');
+        }
+
+        function hideStatusMessage() {
+            statusMessage.className = 'alert d-none';
+            statusMessage.textContent = '';
+        }
+
+        async function openRoomStatusModal(roomNumber) {
+            const room = rooms.find(r => text(r.roomNumber, '') === text(roomNumber, ''));
+            if (!room) return;
+
+            activeStatusRoomNumber = room.roomNumber;
+            document.getElementById('rs-room').textContent = text(room.roomNumber);
+            document.getElementById('rs-current').textContent = `${text(room.occupancyStatus)} / ${text(room.roomStatus)}`;
+            hideStatusMessage();
+            saveStatusButton.disabled = !roomCanBeChanged(room);
+
+            if (!roomCanBeChanged(room)) {
+                showStatusMessage('Only vacant rooms can be changed, and your user must have permission.', 'warning');
+            }
+
+            await loadRoomStatusOptions(room.roomStatus);
+            await loadRoomStatusHistory(room.roomNumber);
+            statusModal.show();
+        }
+
+        async function loadRoomStatusOptions(currentStatus) {
+            const select = document.getElementById('rs-new-status');
+            select.innerHTML = '';
+
+            try {
+                const response = await fetch(`${roomStatusOptionsUrl}?ts=${Date.now()}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const options = await response.json();
+                options.forEach(option => {
+                    const item = document.createElement('option');
+                    item.value = option.code;
+                    item.textContent = option.label;
+                    if (option.label === currentStatus) item.selected = true;
+                    select.appendChild(item);
+                });
+            } catch (_) {
+                [
+                    { code: 1, label: 'Clean' },
+                    { code: 2, label: 'Dirty' },
+                    { code: 3, label: 'Clean (Inspected)' }
+                ].forEach(option => {
+                    const item = document.createElement('option');
+                    item.value = option.code;
+                    item.textContent = option.label;
+                    if (option.label === currentStatus) item.selected = true;
+                    select.appendChild(item);
+                });
+            }
+        }
+
+        async function loadRoomStatusHistory(roomNumber) {
+            const loading = document.getElementById('rs-history-loading');
+            const list = document.getElementById('rs-history');
+            const empty = document.getElementById('rs-history-empty');
+
+            loading.classList.remove('d-none');
+            empty.classList.add('d-none');
+            list.innerHTML = '';
+
+            try {
+                const response = await fetch(`${roomStatusHistoryUrl}?id=${encodeURIComponent(roomNumber)}&ts=${Date.now()}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const history = await response.json();
+                loading.classList.add('d-none');
+
+                if (!history.length) {
+                    empty.classList.remove('d-none');
+                    return;
+                }
+
+                history.forEach(item => {
+                    const entry = document.createElement('div');
+                    entry.className = 'room-status-history-item';
+                    entry.innerHTML = `<div class="fw-semibold">${text(item.oldStatus)} → ${text(item.newStatus)}</div>
+                        <div class="text-muted small">${text(item.changedAt)} by ${text(item.changedBy)}</div>`;
+                    list.appendChild(entry);
+                });
+            } catch (_) {
+                loading.classList.add('d-none');
+                empty.classList.remove('d-none');
+                empty.textContent = 'Could not load history.';
+            }
+        }
+
+        async function saveRoomStatus() {
+            if (!activeStatusRoomNumber) return;
+
+            const token = document.querySelector('#roomStatusAntiForgeryForm input[name="__RequestVerificationToken"]').value;
+            const form = new FormData();
+            form.append('__RequestVerificationToken', token);
+            form.append('roomNumber', activeStatusRoomNumber);
+            form.append('newStatusCode', document.getElementById('rs-new-status').value);
+
+            saveStatusButton.disabled = true;
+            hideStatusMessage();
+
+            try {
+                const response = await fetch(changeRoomStatusUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: form,
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.message || `HTTP ${response.status}`);
+                }
+
+                showStatusMessage(payload.message || 'Room status updated successfully.', 'success');
+                await refreshRooms();
+                await loadRoomStatusHistory(activeStatusRoomNumber);
+
+                const updatedRoom = rooms.find(r => text(r.roomNumber, '') === text(activeStatusRoomNumber, ''));
+                if (updatedRoom) {
+                    document.getElementById('rs-current').textContent = `${text(updatedRoom.occupancyStatus)} / ${text(updatedRoom.roomStatus)}`;
+                    await loadRoomStatusOptions(updatedRoom.roomStatus);
+                    saveStatusButton.disabled = !roomCanBeChanged(updatedRoom);
+                }
+            } catch (err) {
+                showStatusMessage(err.message || 'Could not update room status.', 'danger');
+                const currentRoom = rooms.find(r => text(r.roomNumber, '') === text(activeStatusRoomNumber, ''));
+                saveStatusButton.disabled = currentRoom ? !roomCanBeChanged(currentRoom) : true;
+            }
+        }
+
         document.querySelectorAll('.sortable-header').forEach(header => {
             header.addEventListener('click', () => {
                 const nextKey = header.dataset.sort;
@@ -423,6 +668,13 @@
         });
 
         refreshButton.addEventListener('click', refreshRooms);
+        saveStatusButton.addEventListener('click', saveRoomStatus);
+
+        document.addEventListener('click', event => {
+            const button = event.target.closest('.js-change-status');
+            if (!button) return;
+            openRoomStatusModal(button.dataset.room);
+        });
 
         populateRoomTypes(rooms);
         renderRooms();
