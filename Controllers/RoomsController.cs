@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using HotelRoomsWeb.Models;
+using HotelRoomsWeb.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
-using HotelRoomsWeb.Models;
 
 namespace HotelRoomsWeb.Controllers
 {
@@ -14,16 +15,27 @@ namespace HotelRoomsWeb.Controllers
     public class RoomsController : Controller
     {
         private const string PropertyCode = "RRK";
-        private readonly IConfiguration _configuration;
 
-        public RoomsController(IConfiguration configuration)
+        private static readonly IReadOnlyDictionary<int, string> RoomStatusLabels = new Dictionary<int, string>
+        {
+            [1] = "Clean",
+            [2] = "Dirty",
+            [3] = "Clean (Inspected)"
+        };
+
+        private readonly IConfiguration _configuration;
+        private readonly AppUserStore _userStore;
+
+        public RoomsController(IConfiguration configuration, IWebHostEnvironment environment)
         {
             _configuration = configuration;
+            _userStore = new AppUserStore(configuration, environment);
         }
 
         // List of rooms with guest names
         public IActionResult Index()
         {
+            _userStore.EnsureDatabase();
             var model = GetAllRooms();
             return View(model);
         }
@@ -78,6 +90,58 @@ namespace HotelRoomsWeb.Controllers
             });
         }
 
+        // (API) Available room status options for the edit modal.
+        [HttpGet]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult RoomStatusOptions()
+        {
+            return Json(RoomStatusLabels.Select(status => new
+            {
+                code = status.Key,
+                label = status.Value
+            }));
+        }
+
+        // (API) Last 20 status changes for a room.
+        [HttpGet]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult RoomStatusHistory(int id)
+        {
+            return Json(_userStore.GetRoomStatusHistory(id, 20));
+        }
+
+        // (API) Change vacant room status only for authorized users.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult ChangeRoomStatus(int roomNumber, int newStatusCode)
+        {
+            if (!UserCanChangeRoomStatus())
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "You do not have permission to change room status." });
+            }
+
+            if (!RoomStatusLabels.ContainsKey(newStatusCode))
+            {
+                return BadRequest(new { message = "Invalid room status." });
+            }
+
+            var changedBy = User.Identity?.Name ?? "Unknown";
+            var result = UpdateVacantRoomStatus(roomNumber, newStatusCode, changedBy);
+            if (!result.Success)
+            {
+                return BadRequest(new { message = result.Message });
+            }
+
+            return Json(new
+            {
+                success = true,
+                message = result.Message,
+                history = _userStore.GetRoomStatusHistory(roomNumber, 20),
+                room = GetRoomByNumber(roomNumber)
+            });
+        }
+
         // Single room details page
         public IActionResult Details(int id)
         {
@@ -107,6 +171,80 @@ namespace HotelRoomsWeb.Controllers
         // --------------------------------------------------------------------
         // Data access helpers
         // --------------------------------------------------------------------
+
+        private (bool Success, string Message) UpdateVacantRoomStatus(int roomNumber, int newStatusCode, string changedBy)
+        {
+            var connectionString = _configuration.GetConnectionString("PmsConnection");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new Exception("Connection string 'PmsConnection' is missing.");
+            }
+
+            using var connection = new SqlConnection(connectionString);
+            connection.Open();
+
+            var roomTypeExpr = ResolveExistingColumn(
+                connection,
+                schema: "PMS",
+                table: "FMROMTBL",
+                candidates: new[] { "ROMTYP", "ROOMTYP", "ROMCAT", "CLASS", "TYP" },
+                fallback: "NULL",
+                alias: "R");
+
+            var roomTypeFilter = roomTypeExpr != "NULL" ? $" AND {roomTypeExpr} <> 'zzz'" : string.Empty;
+
+            int occupancyStatus;
+            int oldStatusCode;
+
+            using (var selectCommand = new SqlCommand($@"
+SELECT R.MANSTA, R.ROMSTA
+FROM PMS.FMROMTBL AS R
+WHERE R.ROMNUB = @RoomNumber{roomTypeFilter};", connection))
+            {
+                selectCommand.Parameters.AddWithValue("@RoomNumber", roomNumber);
+
+                using var reader = selectCommand.ExecuteReader();
+                if (!reader.Read())
+                {
+                    return (false, "Room was not found.");
+                }
+
+                occupancyStatus = Convert.ToInt32(reader["MANSTA"]);
+                oldStatusCode = Convert.ToInt32(reader["ROMSTA"]);
+            }
+
+            if (occupancyStatus != 1)
+            {
+                return (false, "Only vacant rooms can be changed.");
+            }
+
+            if (oldStatusCode == newStatusCode)
+            {
+                return (true, "Room status is already selected.");
+            }
+
+            using (var updateCommand = new SqlCommand(@"
+UPDATE PMS.FMROMTBL
+SET ROMSTA = @NewStatusCode
+WHERE ROMNUB = @RoomNumber
+  AND MANSTA = 1;", connection))
+            {
+                updateCommand.Parameters.AddWithValue("@NewStatusCode", newStatusCode);
+                updateCommand.Parameters.AddWithValue("@RoomNumber", roomNumber);
+
+                var affectedRows = updateCommand.ExecuteNonQuery();
+                if (affectedRows == 0)
+                {
+                    return (false, "Room status was not changed. The room may no longer be vacant.");
+                }
+            }
+
+            var oldStatus = GetRoomStatusLabel(oldStatusCode);
+            var newStatus = GetRoomStatusLabel(newStatusCode);
+            _userStore.AddRoomStatusChange(roomNumber, oldStatus, newStatus, changedBy);
+
+            return (true, "Room status updated successfully.");
+        }
 
         private int GetExpectedArrivalRooms()
         {
@@ -444,6 +582,18 @@ ORDER BY O.LSTDAT DESC;";
                 roomStatus = roomStatusValue,
                 guests
             };
+        }
+
+        private bool UserCanChangeRoomStatus()
+        {
+            return User.HasClaim("CanChangeRoomStatus", "true");
+        }
+
+        private static string GetRoomStatusLabel(int statusCode)
+        {
+            return RoomStatusLabels.TryGetValue(statusCode, out var label)
+                ? label
+                : $"Unknown ({statusCode})";
         }
 
         /// <summary>
