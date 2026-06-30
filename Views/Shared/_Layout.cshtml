@@ -24,6 +24,12 @@
                         <li class="nav-item">
                             <a class="nav-link" asp-controller="Rooms" asp-action="Dashboard">Dashboard</a>
                         </li>
+                        @if (User.HasClaim("IsAdmin", "true"))
+                        {
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Admin" asp-action="Users">Admin</a>
+                            </li>
+                        }
                     }
                 </ul>
 
