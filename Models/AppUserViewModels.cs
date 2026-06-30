@@ -35,6 +35,21 @@ namespace HotelRoomsWeb.Models
         public bool CanChangeRoomStatus { get; set; }
     }
 
+    public class ChangeUserPasswordViewModel
+    {
+        [Required]
+        public long Id { get; set; }
+
+        [Required]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(4)]
+        [DataType(DataType.Password)]
+        [Display(Name = "New password")]
+        public string NewPassword { get; set; } = string.Empty;
+    }
+
     public class RoomStatusHistoryViewModel
     {
         public int RoomNumber { get; set; }
