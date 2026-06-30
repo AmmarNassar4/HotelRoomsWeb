@@ -3,7 +3,14 @@
 
 @{
     ViewData["Title"] = "Dashboard";
-    var roomsJson = JsonSerializer.Serialize(Model.Rooms, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var roomsJson = JsonSerializer.Serialize(Model.Rooms, jsonOptions);
+    var dashboardStatsJson = JsonSerializer.Serialize(new
+    {
+        Model.ExpectedArrivalRooms,
+        Model.CleanInspectedVacantRooms,
+        Model.AvailableRoomsAfterExpectedArrivals
+    }, jsonOptions);
 }
 
 <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
@@ -54,25 +61,38 @@
 </div>
 
 <div class="row g-3 mb-3">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="kpi-card text-center">
             <div class="kpi-number" id="kpi-total">0</div>
             <div class="text-muted">Total rooms</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="kpi-card text-center">
             <div class="kpi-number" id="kpi-occupied">0</div>
             <div class="text-muted">Occupied</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="kpi-card text-center">
             <div class="kpi-number" id="kpi-vacant">0</div>
             <div class="text-muted">Vacant</div>
         </div>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-expected-arrivals">0</div>
+            <div class="text-muted">Expected arrival rooms</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="kpi-card text-center">
+            <div class="kpi-number" id="kpi-available-after-arrivals">0</div>
+            <div class="text-muted">Available after arrivals</div>
+            <small class="text-muted d-block">Clean inspected &amp; vacant - expected</small>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="kpi-card text-center">
             <div class="kpi-number" id="kpi-dirty">0</div>
             <div class="text-muted">Dirty</div>
@@ -108,7 +128,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         const dataUrl = '@Url.Action("Data", "Rooms")';
+        const statsUrl = '@Url.Action("DashboardStats", "Rooms")';
         let rooms = (@Html.Raw(roomsJson)).map(normalizeRoom);
+        let dashboardStats = normalizeStats(@Html.Raw(dashboardStatsJson));
 
         const $occ = document.getElementById('f-occupancy');
         const $rs = document.getElementById('f-roomstatus');
@@ -117,6 +139,8 @@
         const refreshButton = document.getElementById('btn-refresh-dashboard');
         const refreshStatus = document.getElementById('dashboardRefreshStatus');
         const lastUpdated = document.getElementById('dashboardLastUpdated');
+        const expectedArrivalsKpi = document.getElementById('kpi-expected-arrivals');
+        const availableAfterArrivalsKpi = document.getElementById('kpi-available-after-arrivals');
 
         let statusChart, detailedChart;
 
@@ -128,6 +152,19 @@
                 roomStatus: room.roomStatus ?? room.RoomStatus ?? '',
                 guestName: room.guestName ?? room.GuestName ?? ''
             };
+        }
+
+        function normalizeStats(stats) {
+            return {
+                expectedArrivalRooms: parseInt(stats.expectedArrivalRooms ?? stats.ExpectedArrivalRooms ?? 0, 10) || 0,
+                cleanInspectedVacantRooms: parseInt(stats.cleanInspectedVacantRooms ?? stats.CleanInspectedVacantRooms ?? 0, 10) || 0,
+                availableRoomsAfterExpectedArrivals: parseInt(stats.availableRoomsAfterExpectedArrivals ?? stats.AvailableRoomsAfterExpectedArrivals ?? 0, 10) || 0
+            };
+        }
+
+        function renderDashboardStats() {
+            expectedArrivalsKpi.innerText = dashboardStats.expectedArrivalRooms;
+            availableAfterArrivalsKpi.innerText = dashboardStats.availableRoomsAfterExpectedArrivals;
         }
 
         function setLastUpdated() {
@@ -199,6 +236,7 @@
             document.getElementById('kpi-occupied').innerText = occupied;
             document.getElementById('kpi-vacant').innerText = vacant;
             document.getElementById('kpi-dirty').innerText = dirty;
+            renderDashboardStats();
 
             const ctx1 = document.getElementById('chartStatus').getContext('2d');
             const s1 = labelsAndValues(byStatus);
@@ -257,31 +295,37 @@
             refreshStatus.textContent = 'Updating data...';
 
             try {
-                const response = await fetch(`${dataUrl}?ts=${Date.now()}`, {
+                const fetchOptions = {
                     headers: {
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     },
                     cache: 'no-store',
                     credentials: 'same-origin'
-                });
+                };
 
-                if (response.redirected) {
-                    window.location.href = response.url;
+                const [roomsResponse, statsResponse] = await Promise.all([
+                    fetch(`${dataUrl}?ts=${Date.now()}`, fetchOptions),
+                    fetch(`${statsUrl}?ts=${Date.now()}`, fetchOptions)
+                ]);
+
+                if (roomsResponse.redirected || statsResponse.redirected) {
+                    window.location.href = roomsResponse.redirected ? roomsResponse.url : statsResponse.url;
                     return;
                 }
 
-                if (response.status === 401) {
+                if (roomsResponse.status === 401 || statsResponse.status === 401) {
                     refreshStatus.className = 'refresh-status text-danger small mb-2';
                     refreshStatus.textContent = 'Your session expired. Please log in again.';
                     return;
                 }
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                if (!roomsResponse.ok || !statsResponse.ok) {
+                    throw new Error(`HTTP ${roomsResponse.status}/${statsResponse.status}`);
                 }
 
-                rooms = (await response.json()).map(normalizeRoom);
+                rooms = (await roomsResponse.json()).map(normalizeRoom);
+                dashboardStats = normalizeStats(await statsResponse.json());
                 populateRoomTypes();
                 render();
                 setLastUpdated();
