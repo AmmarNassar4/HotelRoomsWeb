@@ -82,36 +82,39 @@
             <tbody>
                 @foreach (var user in Model.Users)
                 {
+                    var formId = $"user-form-{user.Id}";
                     <tr>
-                        <td class="fw-semibold">@user.UserName</td>
-                        <td>
-                            <form asp-controller="Admin" asp-action="UpdateUserPermissions" method="post" class="d-flex flex-wrap align-items-center gap-3">
+                        <td class="fw-semibold">
+                            @user.UserName
+                            <form id="@formId" asp-controller="Admin" asp-action="UpdateUserPermissions" method="post" class="d-none">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="id" value="@user.Id" />
-                                <input type="hidden" name="isActive" value="false" />
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" name="isActive" value="true" id="active-@user.Id" checked="@user.IsActive" />
-                                    <label class="form-check-label" for="active-@user.Id">Active</label>
-                                </div>
+                            </form>
                         </td>
                         <td>
-                                <input type="hidden" name="canChangeRoomStatus" value="false" />
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" name="canChangeRoomStatus" value="true" id="change-@user.Id" checked="@user.CanChangeRoomStatus" />
-                                    <label class="form-check-label" for="change-@user.Id">Allowed</label>
-                                </div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" form="@formId" type="checkbox" name="isActive" value="true" id="active-@user.Id" checked="@user.IsActive" />
+                                <input form="@formId" type="hidden" name="isActive" value="false" />
+                                <label class="form-check-label" for="active-@user.Id">Active</label>
+                            </div>
                         </td>
                         <td>
-                                <input type="hidden" name="isAdmin" value="false" />
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" name="isAdmin" value="true" id="admin-@user.Id" checked="@user.IsAdmin" />
-                                    <label class="form-check-label" for="admin-@user.Id">Admin</label>
-                                </div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" form="@formId" type="checkbox" name="canChangeRoomStatus" value="true" id="change-@user.Id" checked="@user.CanChangeRoomStatus" />
+                                <input form="@formId" type="hidden" name="canChangeRoomStatus" value="false" />
+                                <label class="form-check-label" for="change-@user.Id">Allowed</label>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" form="@formId" type="checkbox" name="isAdmin" value="true" id="admin-@user.Id" checked="@user.IsAdmin" />
+                                <input form="@formId" type="hidden" name="isAdmin" value="false" />
+                                <label class="form-check-label" for="admin-@user.Id">Admin</label>
+                            </div>
                         </td>
                         <td class="text-muted small">@user.CreatedAt</td>
                         <td>
-                                <button type="submit" class="btn btn-sm btn-primary">Save</button>
-                            </form>
+                            <button form="@formId" type="submit" class="btn btn-sm btn-primary">Save</button>
                         </td>
                     </tr>
                 }
