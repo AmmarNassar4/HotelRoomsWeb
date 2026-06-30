@@ -1,22 +1,20 @@
 using System.Security.Claims;
 using HotelRoomsWeb.Models;
+using HotelRoomsWeb.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.Sqlite;
 
 namespace HotelRoomsWeb.Controllers
 {
     public class AccountController : Controller
     {
-        private readonly IConfiguration _configuration;
-        private readonly IWebHostEnvironment _environment;
+        private readonly AppUserStore _userStore;
 
         public AccountController(IConfiguration configuration, IWebHostEnvironment environment)
         {
-            _configuration = configuration;
-            _environment = environment;
+            _userStore = new AppUserStore(configuration, environment);
         }
 
         [AllowAnonymous]
@@ -28,6 +26,7 @@ namespace HotelRoomsWeb.Controllers
                 return RedirectToAction("Index", "Rooms");
             }
 
+            _userStore.EnsureDatabase();
             ViewData["ReturnUrl"] = returnUrl;
             return View(new LoginViewModel());
         }
@@ -44,7 +43,8 @@ namespace HotelRoomsWeb.Controllers
                 return View(model);
             }
 
-            if (!IsValidUser(model.UserName, model.Password))
+            var user = _userStore.ValidateUser(model.UserName, model.Password);
+            if (user == null)
             {
                 ModelState.AddModelError(string.Empty, "Invalid username or password.");
                 return View(model);
@@ -52,7 +52,9 @@ namespace HotelRoomsWeb.Controllers
 
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.Name, model.UserName)
+                new Claim(ClaimTypes.Name, user.UserName),
+                new Claim("IsAdmin", user.IsAdmin ? "true" : "false"),
+                new Claim("CanChangeRoomStatus", user.CanChangeRoomStatus ? "true" : "false")
             };
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -88,39 +90,6 @@ namespace HotelRoomsWeb.Controllers
         {
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Login", "Account");
-        }
-
-        private bool IsValidUser(string userName, string password)
-        {
-            var connectionString = GetUsersConnectionString();
-
-            using var connection = new SqliteConnection(connectionString);
-            connection.Open();
-
-            using var command = connection.CreateCommand();
-            command.CommandText = @"
-SELECT COUNT(1)
-FROM Users
-WHERE UserName = $userName
-  AND Password = $password
-  AND IsActive = 1;";
-            command.Parameters.AddWithValue("$userName", userName);
-            command.Parameters.AddWithValue("$password", password);
-
-            var result = Convert.ToInt32(command.ExecuteScalar());
-            return result > 0;
-        }
-
-        private string GetUsersConnectionString()
-        {
-            var configured = _configuration.GetConnectionString("UsersConnection");
-            if (!string.IsNullOrWhiteSpace(configured))
-            {
-                return configured;
-            }
-
-            var databasePath = Path.Combine(_environment.ContentRootPath, "App_Data", "users.db");
-            return $"Data Source={databasePath}";
         }
     }
 }
