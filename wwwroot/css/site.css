@@ -125,6 +125,29 @@ body {
     padding: 0.35rem 0.65rem;
     font-size: 0.78rem;
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.status-action {
+    border: 0;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.status-action:hover,
+.status-action:focus {
+    filter: brightness(0.96);
+    transform: translateY(-1px);
+    outline: 2px solid rgba(13, 110, 253, 0.25);
+    outline-offset: 2px;
+}
+
+.status-action::after {
+    content: "✎";
+    font-size: 0.72rem;
+    opacity: 0.75;
 }
 
 .status-occupied {
@@ -150,6 +173,18 @@ body {
 .status-neutral {
     background: #e2e8f0;
     color: #334155;
+}
+
+.room-status-history {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.room-status-history-item {
+    border: 1px solid var(--app-card-border);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    padding: 0.65rem 0.75rem;
 }
 
 .refresh-status {
