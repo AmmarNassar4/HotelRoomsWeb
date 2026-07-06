@@ -1,0 +1,81 @@
+@model IEnumerable<HotelRoomsWeb.Models.RoomStatusHistoryViewModel>
+
+@{
+    ViewData["Title"] = "Room status logs";
+    var rows = Model?.ToList() ?? new List<HotelRoomsWeb.Models.RoomStatusHistoryViewModel>();
+}
+
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-3 mb-3 page-toolbar">
+    <div>
+        <h2 class="mb-1">Room status logs</h2>
+        <div class="page-subtitle">Latest room status changes stored and displayed in Saudi Arabia time</div>
+    </div>
+    <div class="d-grid d-md-flex gap-2">
+        <a asp-controller="Rooms" asp-action="Index" class="btn btn-outline-secondary mobile-full-btn">Back to rooms</a>
+        <a asp-controller="Rooms" asp-action="Dashboard" class="btn btn-outline-secondary mobile-full-btn">Dashboard</a>
+    </div>
+</div>
+
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mb-2 gap-1">
+    <p class="text-muted mb-0">Showing @rows.Count latest changes</p>
+    <p class="text-muted small mb-0">Current time: <span id="ksaNow">—</span></p>
+</div>
+
+@if (!rows.Any())
+{
+    <div class="alert alert-light border text-center">
+        No room status changes have been recorded yet.
+    </div>
+}
+else
+{
+    <div class="card table-card">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Room</th>
+                        <th>Old status</th>
+                        <th>New status</th>
+                        <th>Changed by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in rows)
+                    {
+                        <tr>
+                            <td class="text-nowrap" data-ksa-time="@item.ChangedAt">@item.ChangedAt KSA</td>
+                            <td class="fw-semibold">@item.RoomNumber</td>
+                            <td>@item.OldStatus</td>
+                            <td>@item.NewStatus</td>
+                            <td>@item.ChangedBy</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        (function () {
+            function updateNow() {
+                const target = document.getElementById('ksaNow');
+                if (target && window.HotelKsaTime) {
+                    target.textContent = window.HotelKsaTime.formatNow();
+                }
+            }
+
+            if (window.HotelKsaTime) {
+                document.querySelectorAll('[data-ksa-time]').forEach(cell => {
+                    cell.textContent = window.HotelKsaTime.formatStored(cell.getAttribute('data-ksa-time'));
+                });
+            }
+
+            updateNow();
+            window.setInterval(updateNow, 1000);
+        })();
+    </script>
+}
