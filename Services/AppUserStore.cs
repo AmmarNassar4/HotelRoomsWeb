@@ -65,12 +65,13 @@ ORDER BY UserName;";
             using var command = connection.CreateCommand();
             command.CommandText = @"
 INSERT INTO Users (UserName, Password, IsActive, IsAdmin, CanChangeRoomStatus, CreatedAt)
-VALUES ($userName, $password, $isActive, $isAdmin, $canChangeRoomStatus, datetime('now'));";
+VALUES ($userName, $password, $isActive, $isAdmin, $canChangeRoomStatus, $createdAt);";
             command.Parameters.AddWithValue("$userName", model.UserName.Trim());
             command.Parameters.AddWithValue("$password", model.Password);
             command.Parameters.AddWithValue("$isActive", model.IsActive ? 1 : 0);
             command.Parameters.AddWithValue("$isAdmin", model.IsAdmin ? 1 : 0);
             command.Parameters.AddWithValue("$canChangeRoomStatus", model.CanChangeRoomStatus ? 1 : 0);
+            command.Parameters.AddWithValue("$createdAt", KsaDateTime.NowText());
             command.ExecuteNonQuery();
 
             EnsureAtLeastOneAdmin(connection);
@@ -121,11 +122,12 @@ WHERE rowid = $id;";
             using var command = connection.CreateCommand();
             command.CommandText = @"
 INSERT INTO RoomStatusChangeLog (RoomNumber, OldStatus, NewStatus, ChangedBy, ChangedAt)
-VALUES ($roomNumber, $oldStatus, $newStatus, $changedBy, datetime('now'));";
+VALUES ($roomNumber, $oldStatus, $newStatus, $changedBy, $changedAt);";
             command.Parameters.AddWithValue("$roomNumber", roomNumber);
             command.Parameters.AddWithValue("$oldStatus", oldStatus);
             command.Parameters.AddWithValue("$newStatus", newStatus);
             command.Parameters.AddWithValue("$changedBy", changedBy);
+            command.Parameters.AddWithValue("$changedAt", KsaDateTime.NowText());
             command.ExecuteNonQuery();
         }
 
@@ -148,14 +150,30 @@ LIMIT $take;";
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                history.Add(new RoomStatusHistoryViewModel
-                {
-                    RoomNumber = Convert.ToInt32(reader["RoomNumber"]),
-                    OldStatus = reader["OldStatus"]?.ToString() ?? string.Empty,
-                    NewStatus = reader["NewStatus"]?.ToString() ?? string.Empty,
-                    ChangedBy = reader["ChangedBy"]?.ToString() ?? string.Empty,
-                    ChangedAt = reader["ChangedAt"]?.ToString() ?? string.Empty
-                });
+                history.Add(ReadRoomStatusHistory(reader));
+            }
+
+            return history;
+        }
+
+        public List<RoomStatusHistoryViewModel> GetAllRoomStatusHistory(int take = 500)
+        {
+            EnsureDatabase();
+
+            var history = new List<RoomStatusHistoryViewModel>();
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT RoomNumber, OldStatus, NewStatus, ChangedBy, ChangedAt
+FROM RoomStatusChangeLog
+ORDER BY Id DESC
+LIMIT $take;";
+            command.Parameters.AddWithValue("$take", take);
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                history.Add(ReadRoomStatusHistory(reader));
             }
 
             return history;
@@ -177,7 +195,7 @@ CREATE TABLE IF NOT EXISTS Users (
     IsActive INTEGER NOT NULL DEFAULT 1,
     IsAdmin INTEGER NOT NULL DEFAULT 0,
     CanChangeRoomStatus INTEGER NOT NULL DEFAULT 0,
-    CreatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+    CreatedAt TEXT NOT NULL DEFAULT (datetime('now', '+3 hours'))
 );";
                 command.ExecuteNonQuery();
             }
@@ -195,10 +213,12 @@ CREATE TABLE IF NOT EXISTS RoomStatusChangeLog (
     OldStatus TEXT NOT NULL,
     NewStatus TEXT NOT NULL,
     ChangedBy TEXT NOT NULL,
-    ChangedAt TEXT NOT NULL DEFAULT (datetime('now'))
+    ChangedAt TEXT NOT NULL DEFAULT (datetime('now', '+3 hours'))
 );
 CREATE INDEX IF NOT EXISTS IX_RoomStatusChangeLog_RoomNumber_Id
-ON RoomStatusChangeLog (RoomNumber, Id DESC);";
+ON RoomStatusChangeLog (RoomNumber, Id DESC);
+CREATE INDEX IF NOT EXISTS IX_RoomStatusChangeLog_Id
+ON RoomStatusChangeLog (Id DESC);";
                 command.ExecuteNonQuery();
             }
 
@@ -233,7 +253,19 @@ ON RoomStatusChangeLog (RoomNumber, Id DESC);";
                 IsActive = Convert.ToInt32(reader["IsActive"]) == 1,
                 IsAdmin = Convert.ToInt32(reader["IsAdmin"]) == 1,
                 CanChangeRoomStatus = Convert.ToInt32(reader["CanChangeRoomStatus"]) == 1,
-                CreatedAt = reader["CreatedAt"]?.ToString() ?? string.Empty
+                CreatedAt = KsaDateTime.FormatStoredValue(reader["CreatedAt"])
+            };
+        }
+
+        private static RoomStatusHistoryViewModel ReadRoomStatusHistory(SqliteDataReader reader)
+        {
+            return new RoomStatusHistoryViewModel
+            {
+                RoomNumber = Convert.ToInt32(reader["RoomNumber"]),
+                OldStatus = reader["OldStatus"]?.ToString() ?? string.Empty,
+                NewStatus = reader["NewStatus"]?.ToString() ?? string.Empty,
+                ChangedBy = reader["ChangedBy"]?.ToString() ?? string.Empty,
+                ChangedAt = KsaDateTime.FormatStoredValue(reader["ChangedAt"])
             };
         }
 

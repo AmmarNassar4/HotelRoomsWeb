@@ -56,21 +56,35 @@
         return raw;
     }
 
+    let isFormatting = false;
+
     function formatGuestDates(container) {
-        const root = container || document;
-        root.querySelectorAll('#gd-guests-list div').forEach(line => {
-            const label = line.querySelector('strong')?.textContent?.replace(':', '').trim().toLowerCase();
-            if (label !== 'arrival' && label !== 'departure') {
-                return;
-            }
+        if (isFormatting) {
+            return;
+        }
 
-            const value = line.querySelector('span');
-            if (!value) {
-                return;
-            }
+        isFormatting = true;
+        try {
+            const root = container || document;
+            root.querySelectorAll('#gd-guests-list div').forEach(line => {
+                const label = line.querySelector('strong')?.textContent?.replace(':', '').trim().toLowerCase();
+                if (label !== 'arrival' && label !== 'departure') {
+                    return;
+                }
 
-            value.textContent = formatDate(value.textContent);
-        });
+                const value = line.querySelector('span');
+                if (!value) {
+                    return;
+                }
+
+                const formatted = formatDate(value.textContent);
+                if (value.textContent !== formatted) {
+                    value.textContent = formatted;
+                }
+            });
+        } finally {
+            isFormatting = false;
+        }
     }
 
     document.addEventListener('DOMContentLoaded', () => {
