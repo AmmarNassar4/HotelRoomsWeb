@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System.Data;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace HotelRoomsWeb.Services
 {
@@ -10,6 +11,8 @@ namespace HotelRoomsWeb.Services
     {
         private readonly IConfiguration _configuration;
         private readonly IWebHostEnvironment _environment;
+        
+        
 
         public AppUserStore(IConfiguration configuration, IWebHostEnvironment environment)
         {
@@ -177,14 +180,19 @@ ORDER BY Id DESC;";
             return history;
         }
 
+        private const string DatabaseName = "HotelRoomsUsers";
+
         public void EnsureDatabase()
         {
+            EnsureDatabaseExists();
+
             using var connection = OpenConnection();
 
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = @"
-IF OBJECT_ID('dbo.Users', 'U') IS NULL
+
+    IF OBJECT_ID('dbo.Users', 'U') IS NULL
 BEGIN
     CREATE TABLE Users (
         Id BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -238,6 +246,31 @@ END";
             EnsureColumn(connection, "Users", "CreatedAt", "NVARCHAR(50) NOT NULL DEFAULT ''");
 
             EnsureAtLeastOneAdmin(connection);
+        }
+        private string GetMasterConnectionString()
+        {
+            var builder = new SqlConnectionStringBuilder(GetConnectionString())
+            {
+                InitialCatalog = "master"
+            };
+
+            return builder.ConnectionString;
+        }
+        private void EnsureDatabaseExists()
+        {
+            var masterConnectionString =
+                GetMasterConnectionString();
+
+            using var connection = new SqlConnection(masterConnectionString);
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = $@"
+IF DB_ID(N'{DatabaseName}') IS NULL
+BEGIN
+    CREATE DATABASE [{DatabaseName}];
+END";
+            command.ExecuteNonQuery();
         }
 
         private SqlConnection OpenConnection()
