@@ -55,6 +55,7 @@
                     <option value="Clean">Clean</option>
                     <option value="Dirty">Dirty</option>
                     <option value="Clean (Inspected)">Clean (Inspected)</option>
+                    <option value="Under Cleaning">Under Cleaning</option>
                     <option value="Unknown">Unknown</option>
                 </select>
             </div>
@@ -216,6 +217,7 @@
             if (normalized.includes('occupied')) return 'status-pill status-occupied';
             if (normalized.includes('vacant')) return 'status-pill status-vacant';
             if (normalized.includes('dirty')) return 'status-pill status-dirty';
+            if (normalized.includes('under cleaning')) return 'status-pill status-under-cleaning';
             if (normalized.includes('clean')) return 'status-pill status-clean';
             return 'status-pill status-neutral';
         }

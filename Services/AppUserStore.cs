@@ -27,7 +27,7 @@ namespace HotelRoomsWeb.Services
             using var connection = OpenConnection();
             using var command = connection.CreateCommand();
             command.CommandText = @"
-SELECT TOP 1 Id, UserName, IsActive, IsAdmin, CanChangeRoomStatus, ISNULL(CreatedAt, '') AS CreatedAt
+SELECT TOP 1 Id, UserName, IsActive, IsAdmin, CanChangeRoomStatus, ISNULL(AllowedRoomStatuses, '') AS AllowedRoomStatuses, ISNULL(CreatedAt, '') AS CreatedAt
 FROM Users
 WHERE UserName = @userName
   AND Password = @password
@@ -47,7 +47,7 @@ WHERE UserName = @userName
             using var connection = OpenConnection();
             using var command = connection.CreateCommand();
             command.CommandText = @"
-SELECT Id, UserName, IsActive, IsAdmin, CanChangeRoomStatus, ISNULL(CreatedAt, '') AS CreatedAt
+SELECT Id, UserName, IsActive, IsAdmin, CanChangeRoomStatus, ISNULL(AllowedRoomStatuses, '') AS AllowedRoomStatuses, ISNULL(CreatedAt, '') AS CreatedAt
 FROM Users
 ORDER BY UserName;";
 
@@ -67,20 +67,21 @@ ORDER BY UserName;";
             using var connection = OpenConnection();
             using var command = connection.CreateCommand();
             command.CommandText = @"
-INSERT INTO Users (UserName, Password, IsActive, IsAdmin, CanChangeRoomStatus, CreatedAt)
-VALUES (@userName, @password, @isActive, @isAdmin, @canChangeRoomStatus, @createdAt);";
+INSERT INTO Users (UserName, Password, IsActive, IsAdmin, CanChangeRoomStatus, AllowedRoomStatuses, CreatedAt)
+VALUES (@userName, @password, @isActive, @isAdmin, @canChangeRoomStatus, @allowedRoomStatuses, @createdAt);";
             command.Parameters.AddWithValue("@userName", model.UserName.Trim());
             command.Parameters.AddWithValue("@password", model.Password);
             command.Parameters.AddWithValue("@isActive", model.IsActive);
             command.Parameters.AddWithValue("@isAdmin", model.IsAdmin);
             command.Parameters.AddWithValue("@canChangeRoomStatus", model.CanChangeRoomStatus);
+            command.Parameters.AddWithValue("@allowedRoomStatuses", RoomStatuses.ToCsv(model.AllowedStatusCodes));
             command.Parameters.AddWithValue("@createdAt", KsaDateTime.NowText());
             command.ExecuteNonQuery();
 
             EnsureAtLeastOneAdmin(connection);
         }
 
-        public void UpdateUserPermissions(long id, bool isActive, bool isAdmin, bool canChangeRoomStatus)
+        public void UpdateUserPermissions(long id, bool isActive, bool isAdmin, bool canChangeRoomStatus, IEnumerable<int>? allowedStatusCodes = null)
         {
             EnsureDatabase();
 
@@ -90,12 +91,14 @@ VALUES (@userName, @password, @isActive, @isAdmin, @canChangeRoomStatus, @create
 UPDATE Users
 SET IsActive = @isActive,
     IsAdmin = @isAdmin,
-    CanChangeRoomStatus = @canChangeRoomStatus
+    CanChangeRoomStatus = @canChangeRoomStatus,
+    AllowedRoomStatuses = @allowedRoomStatuses
 WHERE Id = @id;";
             command.Parameters.AddWithValue("@id", id);
             command.Parameters.AddWithValue("@isActive", isActive);
             command.Parameters.AddWithValue("@isAdmin", isAdmin);
             command.Parameters.AddWithValue("@canChangeRoomStatus", canChangeRoomStatus);
+            command.Parameters.AddWithValue("@allowedRoomStatuses", RoomStatuses.ToCsv(allowedStatusCodes));
             command.ExecuteNonQuery();
 
             EnsureAtLeastOneAdmin(connection);
@@ -156,6 +159,94 @@ ORDER BY Id DESC;";
             }
 
             return history;
+        }
+
+        /// <summary>
+        /// Stores the internal-only room status (e.g. Under Cleaning).
+        /// This never touches the PMS database.
+        /// </summary>
+        public void SetInternalRoomStatus(int roomNumber, string status, string setBy)
+        {
+            EnsureDatabase();
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+MERGE RoomInternalStatus AS target
+USING (SELECT @roomNumber AS RoomNumber) AS source
+ON target.RoomNumber = source.RoomNumber
+WHEN MATCHED THEN
+    UPDATE SET Status = @status, SetBy = @setBy, SetAt = @setAt
+WHEN NOT MATCHED THEN
+    INSERT (RoomNumber, Status, SetBy, SetAt)
+    VALUES (@roomNumber, @status, @setBy, @setAt);";
+            command.Parameters.AddWithValue("@roomNumber", roomNumber);
+            command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@setBy", setBy);
+            command.Parameters.AddWithValue("@setAt", KsaDateTime.NowText());
+            command.ExecuteNonQuery();
+        }
+
+        public void ClearInternalRoomStatus(int roomNumber)
+        {
+            EnsureDatabase();
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM RoomInternalStatus WHERE RoomNumber = @roomNumber;";
+            command.Parameters.AddWithValue("@roomNumber", roomNumber);
+            command.ExecuteNonQuery();
+        }
+
+        public string? GetInternalRoomStatus(int roomNumber)
+        {
+            EnsureDatabase();
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Status FROM RoomInternalStatus WHERE RoomNumber = @roomNumber;";
+            command.Parameters.AddWithValue("@roomNumber", roomNumber);
+
+            var value = command.ExecuteScalar();
+            return value == null || value == DBNull.Value ? null : value.ToString();
+        }
+
+        public Dictionary<int, string> GetInternalRoomStatuses()
+        {
+            EnsureDatabase();
+
+            var statuses = new Dictionary<int, string>();
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT RoomNumber, Status FROM RoomInternalStatus;";
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                statuses[Convert.ToInt32(reader["RoomNumber"])] = reader["Status"]?.ToString() ?? string.Empty;
+            }
+
+            return statuses;
+        }
+
+        /// <summary>
+        /// Room status codes this user is allowed to set.
+        /// An empty stored value means every status is allowed.
+        /// </summary>
+        public HashSet<int> GetAllowedRoomStatusCodes(string userName)
+        {
+            EnsureDatabase();
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT TOP 1 ISNULL(AllowedRoomStatuses, '') AS AllowedRoomStatuses
+FROM Users
+WHERE UserName = @userName;";
+            command.Parameters.AddWithValue("@userName", userName);
+
+            var value = command.ExecuteScalar();
+            return RoomStatuses.ParseAllowedCodes(value?.ToString());
         }
 
         public List<RoomStatusHistoryViewModel> GetAllRoomStatusHistory(int take = 500)
@@ -237,12 +328,23 @@ IF NOT EXISTS (
 BEGIN
     CREATE INDEX IX_RoomStatusChangeLog_Id
     ON RoomStatusChangeLog (Id DESC);
+END
+
+IF OBJECT_ID('dbo.RoomInternalStatus', 'U') IS NULL
+BEGIN
+    CREATE TABLE RoomInternalStatus (
+        RoomNumber INT NOT NULL PRIMARY KEY,
+        Status NVARCHAR(100) NOT NULL,
+        SetBy NVARCHAR(100) NOT NULL,
+        SetAt NVARCHAR(50) NOT NULL
+    );
 END";
                 command.ExecuteNonQuery();
             }
 
             EnsureColumn(connection, "Users", "IsAdmin", "BIT NOT NULL DEFAULT 0");
             EnsureColumn(connection, "Users", "CanChangeRoomStatus", "BIT NOT NULL DEFAULT 0");
+            EnsureColumn(connection, "Users", "AllowedRoomStatuses", "NVARCHAR(200) NOT NULL DEFAULT ''");
             EnsureColumn(connection, "Users", "CreatedAt", "NVARCHAR(50) NOT NULL DEFAULT ''");
 
             EnsureAtLeastOneAdmin(connection);
@@ -300,6 +402,7 @@ END";
                 IsActive = Convert.ToBoolean(reader["IsActive"]),
                 IsAdmin = Convert.ToBoolean(reader["IsAdmin"]),
                 CanChangeRoomStatus = Convert.ToBoolean(reader["CanChangeRoomStatus"]),
+                AllowedRoomStatuses = reader["AllowedRoomStatuses"]?.ToString() ?? string.Empty,
                 CreatedAt = KsaDateTime.FormatStoredValue(reader["CreatedAt"])
             };
         }

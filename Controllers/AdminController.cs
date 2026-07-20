@@ -68,14 +68,14 @@ namespace HotelRoomsWeb.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public IActionResult UpdateUserPermissions(long id, bool isActive, bool isAdmin, bool canChangeRoomStatus)
+        public IActionResult UpdateUserPermissions(long id, bool isActive, bool isAdmin, bool canChangeRoomStatus, List<int>? allowedStatusCodes)
         {
             if (!CurrentUserIsAdmin())
             {
                 return Forbid();
             }
 
-            _userStore.UpdateUserPermissions(id, isActive, isAdmin, canChangeRoomStatus);
+            _userStore.UpdateUserPermissions(id, isActive, isAdmin, canChangeRoomStatus, allowedStatusCodes);
             TempData["SuccessMessage"] = "User permissions updated.";
             return RedirectToAction(nameof(Users));
         }

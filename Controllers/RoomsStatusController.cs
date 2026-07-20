@@ -12,12 +12,7 @@ namespace HotelRoomsWeb.Controllers
     [Route("RoomsStatus")]
     public class RoomsStatusController : Controller
     {
-        private static readonly IReadOnlyDictionary<int, string> RoomStatusLabels = new Dictionary<int, string>
-        {
-            [1] = "Clean",
-            [2] = "Dirty",
-            [3] = "Clean (Inspected)"
-        };
+        private static readonly IReadOnlyDictionary<int, string> RoomStatusLabels = RoomStatuses.AllLabels;
 
         private readonly IConfiguration _configuration;
         private readonly AppUserStore _userStore;
@@ -44,6 +39,12 @@ namespace HotelRoomsWeb.Controllers
             }
 
             var changedBy = User.Identity?.Name ?? "Unknown";
+
+            if (!_userStore.GetAllowedRoomStatusCodes(changedBy).Contains(newStatusCode))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "You do not have permission to set this room status." });
+            }
+
             var result = UpdateRoomStatus(roomNumber, newStatusCode, changedBy);
             if (!result.Success)
             {
@@ -104,7 +105,25 @@ WHERE R.ROMNUB = @RoomNumber{roomTypeFilter};", connection))
                 return (false, "Only vacant or occupied rooms can be changed.");
             }
 
-            if (oldStatusCode == newStatusCode)
+            // Effective current status: the internal status (if any) wins over the PMS one.
+            var internalStatus = _userStore.GetInternalRoomStatus(roomNumber);
+            var oldStatus = internalStatus ?? GetRoomStatusLabel(oldStatusCode);
+
+            if (RoomStatuses.IsInternalOnly(newStatusCode))
+            {
+                // Internal-only status: stored locally, never written to the PMS.
+                var internalLabel = GetRoomStatusLabel(newStatusCode);
+                if (oldStatus == internalLabel)
+                {
+                    return (true, "Room status is already selected.");
+                }
+
+                _userStore.SetInternalRoomStatus(roomNumber, internalLabel, changedBy);
+                _userStore.AddRoomStatusChange(roomNumber, oldStatus, internalLabel, changedBy);
+                return (true, "Room status updated (internal only, not sent to PMS).");
+            }
+
+            if (internalStatus == null && oldStatusCode == newStatusCode)
             {
                 return (true, "Room status is already selected.");
             }
@@ -125,7 +144,12 @@ WHERE ROMNUB = @RoomNumber
                 }
             }
 
-            var oldStatus = GetRoomStatusLabel(oldStatusCode);
+            // Leaving an internal status back to a real PMS status clears the local override.
+            if (internalStatus != null)
+            {
+                _userStore.ClearInternalRoomStatus(roomNumber);
+            }
+
             var newStatus = GetRoomStatusLabel(newStatusCode);
             _userStore.AddRoomStatusChange(roomNumber, oldStatus, newStatus, changedBy);
 

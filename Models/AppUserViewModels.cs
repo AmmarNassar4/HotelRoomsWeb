@@ -10,6 +10,10 @@ namespace HotelRoomsWeb.Models
         public bool IsActive { get; set; }
         public bool IsAdmin { get; set; }
         public bool CanChangeRoomStatus { get; set; }
+
+        /// <summary>CSV of room status codes the user may set; empty = all.</summary>
+        public string AllowedRoomStatuses { get; set; } = string.Empty;
+
         public string CreatedAt { get; set; } = string.Empty;
     }
 
@@ -33,6 +37,8 @@ namespace HotelRoomsWeb.Models
         public bool IsActive { get; set; } = true;
         public bool IsAdmin { get; set; }
         public bool CanChangeRoomStatus { get; set; }
+
+        public List<int> AllowedStatusCodes { get; set; } = new();
     }
 
     public class ChangeUserPasswordViewModel

@@ -18,12 +18,7 @@ namespace HotelRoomsWeb.Controllers
     {
         private const string PropertyCode = "RRK";
 
-        private static readonly IReadOnlyDictionary<int, string> RoomStatusLabels = new Dictionary<int, string>
-        {
-            [1] = "Clean",
-            [2] = "Dirty",
-            [3] = "Clean (Inspected)"
-        };
+        private static readonly IReadOnlyDictionary<int, string> RoomStatusLabels = RoomStatuses.AllLabels;
 
         private readonly IConfiguration _configuration;
         private readonly AppUserStore _userStore;
@@ -97,11 +92,15 @@ namespace HotelRoomsWeb.Controllers
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult RoomStatusOptions()
         {
-            return Json(RoomStatusLabels.Select(status => new
-            {
-                code = status.Key,
-                label = status.Value
-            }));
+            var allowedCodes = _userStore.GetAllowedRoomStatusCodes(User.Identity?.Name ?? string.Empty);
+
+            return Json(RoomStatusLabels
+                .Where(status => allowedCodes.Contains(status.Key))
+                .Select(status => new
+                {
+                    code = status.Key,
+                    label = status.Value
+                }));
         }
 
         // (API) Last 20 status changes for a room.
@@ -129,6 +128,12 @@ namespace HotelRoomsWeb.Controllers
             }
 
             var changedBy = User.Identity?.Name ?? "Unknown";
+
+            if (!_userStore.GetAllowedRoomStatusCodes(changedBy).Contains(newStatusCode))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "You do not have permission to set this room status." });
+            }
+
             var result = UpdateVacantRoomStatus(roomNumber, newStatusCode, changedBy);
             if (!result.Success)
             {
@@ -220,7 +225,25 @@ WHERE R.ROMNUB = @RoomNumber{roomTypeFilter};", connection))
                 return (false, "Only vacant rooms can be changed.");
             }
 
-            if (oldStatusCode == newStatusCode)
+            // Effective current status: the internal status (if any) wins over the PMS one.
+            var internalStatus = _userStore.GetInternalRoomStatus(roomNumber);
+            var oldStatus = internalStatus ?? GetRoomStatusLabel(oldStatusCode);
+
+            if (RoomStatuses.IsInternalOnly(newStatusCode))
+            {
+                // Internal-only status: stored locally, never written to the PMS.
+                var internalLabel = GetRoomStatusLabel(newStatusCode);
+                if (oldStatus == internalLabel)
+                {
+                    return (true, "Room status is already selected.");
+                }
+
+                _userStore.SetInternalRoomStatus(roomNumber, internalLabel, changedBy);
+                _userStore.AddRoomStatusChange(roomNumber, oldStatus, internalLabel, changedBy);
+                return (true, "Room status updated (internal only, not sent to PMS).");
+            }
+
+            if (internalStatus == null && oldStatusCode == newStatusCode)
             {
                 return (true, "Room status is already selected.");
             }
@@ -241,7 +264,12 @@ WHERE ROMNUB = @RoomNumber
                 }
             }
 
-            var oldStatus = GetRoomStatusLabel(oldStatusCode);
+            // Leaving an internal status back to a real PMS status clears the local override.
+            if (internalStatus != null)
+            {
+                _userStore.ClearInternalRoomStatus(roomNumber);
+            }
+
             var newStatus = GetRoomStatusLabel(newStatusCode);
             _userStore.AddRoomStatusChange(roomNumber, oldStatus, newStatus, changedBy);
 
@@ -377,7 +405,27 @@ ORDER BY R.ROMNUB;";
                 result.Add(item);
             }
 
+            ApplyInternalStatuses(result);
+
             return result;
+        }
+
+        // Overlay internal-only statuses (e.g. Under Cleaning) on top of the PMS status.
+        private void ApplyInternalStatuses(List<RoomGuestViewModel> rooms)
+        {
+            var internalStatuses = _userStore.GetInternalRoomStatuses();
+            if (internalStatuses.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var room in rooms)
+            {
+                if (internalStatuses.TryGetValue(room.RoomNumber, out var status))
+                {
+                    room.RoomStatus = status;
+                }
+            }
         }
 
         // Get details for a single room (same logic as GetAllRooms but filtered)
@@ -445,7 +493,7 @@ WHERE R.ROMNUB = @RoomNumber{roomTypeFilterSingle};";
             using var reader = command.ExecuteReader();
             if (reader.Read())
             {
-                return new RoomGuestViewModel
+                var room = new RoomGuestViewModel
                 {
                     RoomNumber = Convert.ToInt32(reader["RoomNumber"]),
                     RoomType = reader["RoomTypeCode"]?.ToString() ?? string.Empty,
@@ -453,6 +501,14 @@ WHERE R.ROMNUB = @RoomNumber{roomTypeFilterSingle};";
                     RoomStatus = reader["RoomStatus"]?.ToString() ?? string.Empty,
                     GuestName = reader["GuestName"]?.ToString() ?? string.Empty
                 };
+
+                var internalStatus = _userStore.GetInternalRoomStatus(room.RoomNumber);
+                if (internalStatus != null)
+                {
+                    room.RoomStatus = internalStatus;
+                }
+
+                return room;
             }
 
             return null;
@@ -573,6 +629,12 @@ ORDER BY O.LSTDAT DESC;";
                     nationalityCode = reader["NationalityCode"]?.ToString() ?? string.Empty,
                     phone = reader["Phone"]?.ToString() ?? string.Empty
                 });
+            }
+
+            var internalRoomStatus = _userStore.GetInternalRoomStatus(roomNumber);
+            if (internalRoomStatus != null)
+            {
+                roomStatusValue = internalRoomStatus;
             }
 
             // One object with room info + list of guests

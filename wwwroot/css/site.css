@@ -170,6 +170,11 @@ body {
     color: #0f5132;
 }
 
+.status-under-cleaning {
+    background: #fff3cd;
+    color: #664d03;
+}
+
 .status-neutral {
     background: #e2e8f0;
     color: #334155;
